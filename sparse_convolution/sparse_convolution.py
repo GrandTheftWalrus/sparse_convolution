@@ -112,6 +112,21 @@ class Toeplitz_convolution2d():
         # with a 10,000 x 10,000 input matrix and a 100 x 100 kernel, for example, we'd only need to store
         # ~2,000,000 elements instead of ~10,000,000,000 elements. The memory usage would scale linearly with
         # the size of the input matrix, instead of quadratically.
+        # TODO: Implement a custom sparse matrix class that takes advantage of the Toeplitz structure,
+        # while still allowing for efficient matrix multiplication. Gotta make sure that this is actually
+        # possible. I think Toeplitz matrices (or perhaps specifically "Circulant" matrices) can be
+        # diagonalized by a Fourier transform, the result of which can then be easily matrix-multiplied
+        # (which corresponds to convolution in the space domain). So, perhaps if we can perform an FFT on
+        # an implicitly stored Toeplitz matrix, then we're laughing. I'd also have to verify that the FFT
+        # method still allows for batching convolution operations, which is a key feature of the current
+        # implementation.
+        # NOTE: After drawing a diagram and understanding the structure of double_toeplitz, I see that
+        # the matrix has a yuge ability to be compressed. The only unique values in the matrix are the
+        # rows of the kernel, which are constantly repeated along the diagonals of sub-tiles of the matrix,
+        # shifted according to the position of the sub-tile. So, basically, the memory usage of the
+        # double_toeplitz can indeed be *massively* reduced. I just need to write a (perhaps second?)
+        # wrapper class for it that can facilitate its matrix multiplication by a vector. Might have to
+        # do this in C.
 
         ## make the toeplitz matrices
         t = toeplitz_matrices = [scipy.sparse.diags(
