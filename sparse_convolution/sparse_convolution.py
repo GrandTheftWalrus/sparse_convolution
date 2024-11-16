@@ -101,6 +101,18 @@ class Toeplitz_convolution2d():
 
         self.so = so = size_output_array = ( (k.shape[0] + x_shape[0] -1), (k.shape[1] + x_shape[1] -1))  ## 'size out' is the size of the output array
 
+        # NOTE: If my analysis is correct, the toeplitz matrices below (made using scipy.sparse.diags)
+        # are stored in either the DIA format, or perhaps CSR or CSC. Either way, it's being stored as
+        # whichever of the sparse formats described here: https://docs.scipy.org/doc/scipy/reference/sparse.html
+        # are determined "appropriate" by the scipy library. The problem is, none of these formats seem
+        # to take advantage of the redundant nature of Toeplitz matrices?? This means that unless the
+        # kernel is largely empty, which it probably isn't, the whole Toeplitz-Block-Toeplitz matrix will
+        # be defined explicitly, which makes working with sizeable input matrices infeasible.
+        # We should be having the Toeplitz matrices defined only by their first column and row, because then
+        # with a 10,000 x 10,000 input matrix and a 100 x 100 kernel, for example, we'd only need to store
+        # ~2,000,000 elements instead of ~10,000,000,000 elements. The memory usage would scale linearly with
+        # the size of the input matrix, instead of quadratically.
+
         ## make the toeplitz matrices
         t = toeplitz_matrices = [scipy.sparse.diags(
             diagonals=np.ones((k.shape[1], x_shape[1]), dtype=dtype) * k_i[::-1][:,None], 
