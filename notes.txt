@@ -1,3 +1,10 @@
+# Notes
+
 Toeplitz matrices have a couple properties that make them a useful intermediary for performing convolution efficiently
 - The convolution of an array x with a kernel h can be represented by the matrix multiplication T * x, where T is a Toeplitz matrix whose repeated column is h.
 - Circulant toeplitz matrices can be "diagonalized" by a Fast Fourier Transform (which is fast to do). A property of diagonals is that a function (such as matrix multiplication) can be performed on the diagonal of a matrix instead of the matrix itself to get the same result, but it's much faster because you need to muck with way less elements.
+
+
+## Explanation of double Toeplitz usage in 2D convolution
+
+https://stackoverflow.com/questions/16798888/2-d-convolution-as-a-matrix-matrix-multiplication
