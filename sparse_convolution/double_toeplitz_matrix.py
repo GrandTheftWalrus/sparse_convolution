@@ -82,9 +82,11 @@ class DoubleToeplitzMatrix(spmatrix):
             raise ValueError("Dimension mismatch for matrix multiplication: {} vs {}".format(B.shape[0], self.shape[1]))
 
         result = np.zeros((self.shape[0], B.shape[1]))
-        nonzero_indices = zip(*np.nonzero(B))
+        B_nonzero_indices = list(zip(*np.nonzero(B)))
         for X_row in range(self.shape[0]):
-            for v_row, v_col in nonzero_indices:
+            for v_row, v_col in B_nonzero_indices:
+                if v_row > X_row: # The upper triangle is all zeros
+                    continue
                 result[X_row, v_col] += self._compute_value(X_row, v_row) * B[v_row, v_col]
         
         return result
