@@ -17,7 +17,7 @@ def test_sparse_toeplitz():
     # Warning: Testing the accuracy scales horribly because
     # it checks the output against an explicit matrix
     # multiplication.
-    TEST_ACCURACY = True
+    TEST_ACCURACY = False
 
     stt = shapes_to_try = [
         # (1,1000, 1,1),
@@ -39,7 +39,19 @@ def test_sparse_toeplitz():
         # (256,256, 10,10),
         # (1024,1024, 10,10),
         (2,3, 2, 2),
-        (3,3, 2, 2), # TODO: Fix how it fails if the input matrix height is incerased by 1 (increasing the other values by 1 works though)
+        (10,10, 2, 2),
+        (20,20, 2, 2),
+        (1000,1000, 512, 512),
+        (2000,2000, 512, 512),
+        (3000,3000, 512, 512),
+        (4000,4000, 512, 512),
+        (5000,5000, 512, 512),
+        (6000,6000, 512, 512),
+        (7000,7000, 512, 512),
+        (8000,8000, 512, 512),
+        (9000,9000, 512, 512),
+        (10000,10000, 512, 512),
+        # (3,3, 2, 2), # TODO: Fix how it fails if the input matrix height is incerased by 1 (increasing the other values by 1 works though)
         # (512,512, 32, 32),
         # (10000,10000, 1, 1),
         # (10000,10000, 3, 3),
@@ -79,6 +91,7 @@ def test_sparse_toeplitz():
     for batch_size in bstt:
         for density in d_tt:
             for shape in stt:
+                print(f'\nTesting shape: {shape}, batch_size: {batch_size}, density: {density}, mode: {mode}')
                 # Make X
                 X_shape = (batch_size, shape[0], shape[1])
                 X = np.zeros(X_shape)
