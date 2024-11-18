@@ -19,12 +19,12 @@ class DoubleToeplitzMatrix(spmatrix):
         self.kernel_values = kernel_values  # Kernel values as a 2D array
 
         batch_size, input_rows, input_cols = input_size
-        padded_kernel_height = input_rows + kernel_size[0] - 1
-        padded_kernel_width = input_cols + kernel_size[1] - 1
+        self.padded_kernel_height = input_rows + kernel_size[0] - 1
+        self.padded_kernel_width = input_cols + kernel_size[1] - 1
 
-        self.single_toeplitz_height = padded_kernel_width
+        self.single_toeplitz_height = self.padded_kernel_width
         self.single_toeplitz_width = input_size[2]
-        self._shape = (self.single_toeplitz_height * padded_kernel_height, self.single_toeplitz_width * input_size[1])
+        self._shape = (self.single_toeplitz_height * self.padded_kernel_height, self.single_toeplitz_width * input_size[1])
 
     @property
     def shape(self):
@@ -44,12 +44,12 @@ class DoubleToeplitzMatrix(spmatrix):
         Compute the value of the matrix at position (row, col) dynamically.
         """
         # Find which stacked Toeplitz matrix this row/col is in
-        toeplitz_x = col // self.single_toeplitz_width   # 2 // 3 = 0
-        toeplitz_y = row // self.single_toeplitz_height  # 2 // 4 = 0
-        toeplitz_row = row % self.single_toeplitz_height  # 2 % 4 = 2
-        toeplitz_col = col % self.single_toeplitz_width   # 2 % 3 = 2
-        padded_kernel_row = toeplitz_y - toeplitz_x
-        padded_kernel_col = toeplitz_col - toeplitz_row + 1
+        toeplitz_x = col // self.single_toeplitz_width
+        toeplitz_y = row // self.single_toeplitz_height
+        toeplitz_row = row % self.single_toeplitz_height
+        toeplitz_col = col % self.single_toeplitz_width
+        padded_kernel_row = self.padded_kernel_height - 2 - (toeplitz_y - toeplitz_x) # Not sure why this needed to be -2 instead of -1
+        padded_kernel_col = toeplitz_row - toeplitz_col
 
         # If the row/col is outside the kernel, return 0
         if padded_kernel_row < 0 or padded_kernel_row >= self.kernel_size[0] or padded_kernel_col < 0 or padded_kernel_col >= self.kernel_size[1]:
@@ -80,7 +80,7 @@ class DoubleToeplitzMatrix(spmatrix):
         """
         if B.shape[0] != self.shape[1]:
             raise ValueError("Dimension mismatch for matrix multiplication: {} vs {}".format(B.shape[0], self.shape[1]))
-        
+
         result = np.zeros((self.shape[0], B.shape[1]))
         for X_row in range(self.shape[0]):
             for v_col in range(B.shape[1]):
@@ -115,7 +115,7 @@ class DoubleToeplitzMatrix(spmatrix):
         for row in range(self.shape[0]):
             row_str = []
             for col in range(self.shape[1]):
-                row_str.append(f"{self._compute_value(row, col):2.0f}\t")
+                row_str.append(f"{self._compute_value(row, col):.2f}\t")
             matrix_str.append(" ".join(row_str))
 
         # Combine rows into a single string
