@@ -47,9 +47,10 @@ class DoubleToeplitzHelper():
 
         # The toeplitzes are all empty up until the first diagonal
         start_row = tb_j * self.single_toeplitz_height
+        end_row = start_row + self.single_toeplitz_height * self.kernel.shape[0]
         indices: List[Tuple[int, int]] = []
         # For each nonzero inner toeplitz
-        for i in range(start_row, self.shape[0], self.single_toeplitz_height):
+        for i in range(start_row, end_row, self.single_toeplitz_height):
             # (We are now at the top of a nonzero inner toeplitz)
             inner_start_row = t_j
             for i_inner in range(inner_start_row, inner_start_row + self.kernel.shape[1]):

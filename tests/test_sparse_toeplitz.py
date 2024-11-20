@@ -129,18 +129,28 @@ def test_sparse_toeplitz():
                     # Form the bare minimum double Toeplitz
                     init_start = time.time()
                     dt_helper = DoubleToeplitzHelper(shape, kernel)
-                    rows, cols, data = [], [], []
+                    num_elements = len(nonzero_B_rows) * k_shape[0] * k_shape[1]
+                    rows = np.empty(num_elements, dtype=int)
+                    cols = np.empty(num_elements, dtype=int)
+                    data = np.empty(num_elements, dtype=int)
                     total_nonzero_row_detection_time = 0
                     total_value_calculation_time = 0
-                    for col in nonzero_B_rows:
+                    current_index = 0
+                    for n, col in enumerate(nonzero_B_rows):
                         nz_row_detect_start = time.time()
                         col_rows = dt_helper.get_nonzero_rows(col)
+                        num_rows = len(col_rows)
                         total_nonzero_row_detection_time += time.time() - nz_row_detect_start
                         value_calc_start = time.time()
-                        rows.extend(col_rows)
-                        cols.extend([col] * len(col_rows))
-                        data.extend([dt_helper.get_value(row, col) for row in col_rows])
+                        # Assign values to the preallocated arrays
+                        rows[current_index:current_index + num_rows] = col_rows
+                        cols[current_index:current_index + num_rows] = col
+                        data[current_index:current_index + num_rows] = [
+                            dt_helper.get_value(row, col) for row in col_rows
+                        ]
+                        current_index += num_rows
                         total_value_calculation_time += time.time() - value_calc_start
+
                     csr_creation_start = time.time()
                     DT = scipy.sparse.csr_matrix((data, (rows, cols)), shape=dt_helper.shape)
                     csr_creation_time = time.time() - csr_creation_start
