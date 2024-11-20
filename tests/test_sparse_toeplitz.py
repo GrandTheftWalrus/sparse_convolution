@@ -19,7 +19,7 @@ def test_sparse_toeplitz():
     # Warning: Testing the accuracy scales horribly because
     # it checks the output against an explicit matrix
     # multiplication.
-    TEST_ACCURACY = False
+    TEST_ACCURACY = True
 
     stt = shapes_to_try = [
         # (1,1000, 1,1),
@@ -52,16 +52,16 @@ def test_sparse_toeplitz():
         (80,80, 2, 2),
         (90,90, 2, 2),
         (100,100, 2, 2),
-        (1000,1000, 3, 3),
-        (2000,2000, 3, 3),
-        (3000,3000, 3, 3),
-        (4000,4000, 3, 3),
-        (5000,5000, 3, 3),
-        (6000,6000, 3, 3),
-        (7000,7000, 3, 3),
-        (8000,8000, 3, 3),
-        (9000,9000, 3, 3),
-        (10000,10000, 3, 3),
+        # (1000,1000, 3, 3),
+        # (2000,2000, 3, 3),
+        # (3000,3000, 3, 3),
+        # (4000,4000, 3, 3),
+        # (5000,5000, 3, 3),
+        # (6000,6000, 3, 3),
+        # (7000,7000, 3, 3),
+        # (8000,8000, 3, 3),
+        # (9000,9000, 3, 3),
+        # (10000,10000, 3, 3),
         # (3,3, 2, 2),
         # (512,512, 32, 32),
         # (10000,10000, 1, 1),
@@ -130,29 +130,29 @@ def test_sparse_toeplitz():
                     init_start = time.time()
                     dt_helper = DoubleToeplitzHelper(shape, kernel)
                     num_elements = len(nonzero_B_rows) * k_shape[0] * k_shape[1]
-                    rows = np.empty(num_elements, dtype=int)
-                    cols = np.empty(num_elements, dtype=int)
-                    data = np.empty(num_elements, dtype=int)
+                    rows_nd = np.empty(num_elements, dtype=int)
+                    cols_nd = np.empty(num_elements, dtype=int)
+                    data_nd = np.empty(num_elements, dtype=float)
                     total_nonzero_row_detection_time = 0
                     total_value_calculation_time = 0
                     current_index = 0
                     for n, col in enumerate(nonzero_B_rows):
                         nz_row_detect_start = time.time()
-                        col_rows = dt_helper.get_nonzero_rows(col)
-                        num_rows = len(col_rows)
+                        nonzero_rows = dt_helper.get_nonzero_rows(col)
+                        num_rows = len(nonzero_rows)
                         total_nonzero_row_detection_time += time.time() - nz_row_detect_start
                         value_calc_start = time.time()
                         # Assign values to the preallocated arrays
-                        rows[current_index:current_index + num_rows] = col_rows
-                        cols[current_index:current_index + num_rows] = col
-                        data[current_index:current_index + num_rows] = [
-                            dt_helper.get_value(row, col) for row in col_rows
+                        rows_nd[current_index:current_index + num_rows] = nonzero_rows
+                        cols_nd[current_index:current_index + num_rows] = col
+                        data_nd[current_index:current_index + num_rows] = [
+                            dt_helper.get_value(row, col) for row in nonzero_rows
                         ]
                         current_index += num_rows
                         total_value_calculation_time += time.time() - value_calc_start
 
                     csr_creation_start = time.time()
-                    DT = scipy.sparse.csr_matrix((data, (rows, cols)), shape=dt_helper.shape)
+                    DT = scipy.sparse.csr_matrix((data_nd, (rows_nd, cols_nd)), shape=dt_helper.shape)
                     csr_creation_time = time.time() - csr_creation_start
                     init_time = time.time() - init_start
                     print(f'total_nonzero_row_detection_time: {total_nonzero_row_detection_time:8.2f}s')
