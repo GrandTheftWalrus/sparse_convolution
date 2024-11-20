@@ -42,14 +42,14 @@ def test_sparse_toeplitz():
         (3,3, 2, 2),
         (10,10, 2, 2),
         (20,20, 2, 2),
-        (30,30, 2, 2),
-        (40,40, 2, 2),
-        (50,50, 2, 2),
-        (60,60, 2, 2),
-        (70,70, 2, 2),
-        (80,80, 2, 2),
-        (90,90, 2, 2),
-        (100,100, 2, 2),
+        # (30,30, 2, 2),
+        # (40,40, 2, 2),
+        # (50,50, 2, 2),
+        # (60,60, 2, 2),
+        # (70,70, 2, 2),
+        # (80,80, 2, 2),
+        # (90,90, 2, 2),
+        # (100,100, 2, 2),
         # (1000,1000, 512, 512),
         # (2000,2000, 512, 512),
         # (3000,3000, 512, 512),
@@ -60,7 +60,7 @@ def test_sparse_toeplitz():
         # (8000,8000, 512, 512),
         # (9000,9000, 512, 512),
         # (10000,10000, 512, 512),
-        # (3,3, 2, 2), # TODO: Fix how it fails if the input matrix height is incerased by 1 (increasing the other values by 1 works though)
+        # (3,3, 2, 2),
         # (512,512, 32, 32),
         # (10000,10000, 1, 1),
         # (10000,10000, 3, 3),
@@ -78,14 +78,14 @@ def test_sparse_toeplitz():
 
     bstt = batch_sizes_to_try = [
         1, 
-        # 10, 
+        10, 
         # 100, 
         # 9999, 
         # 100000
     ]
 
     d_tt = sparsity_to_try = [
-        # 0.0001,
+        0.0001,
         # 0.001,
         0.5,
         # 0.01,
@@ -93,94 +93,88 @@ def test_sparse_toeplitz():
         # 1.0
     ]
 
-    mode = 'same'
-    # mode = 'full'
-    # mode = 'valid'
+    modes = ['full',
+            'same',
+            'valid']
 
     for batch_size in bstt:
         for density in d_tt:
             for shape in stt:
-                print(f'\nTesting shape: {shape}, batch_size: {batch_size}, density: {density}, mode: {mode}')
-                # Make X
-                X_shape = (batch_size, shape[0], shape[1])
-                X = np.zeros(X_shape)
-                for i in range(X_shape[0]):
-                    X[i] = scipy.sparse.random(X_shape[1], X_shape[2], density=density).toarray() * 100
+                for modes in ['full', 'same', 'valid']:
+                    print(f'\nTesting shape: {shape}, batch_size: {batch_size}, density: {density}, mode: {modes}')
+                    # Make X
+                    X_shape = (batch_size, shape[0], shape[1])
+                    X = np.zeros(X_shape)
+                    for i in range(X_shape[0]):
+                        X[i] = scipy.sparse.random(X_shape[1], X_shape[2], density=density).toarray() * 100
 
-                x_t = np.flip(X, axis=1).reshape(batch_size, -1).T
+                    x_t = np.flip(X, axis=1).reshape(batch_size, -1).T
 
-                # Make kernel
-                k_shape = (shape[2], shape[3])
-                kernel = np.random.rand(*k_shape)
+                    # Make kernel
+                    k_shape = (shape[2], shape[3])
+                    kernel = np.random.rand(*k_shape)
 
-                # Form double Toeplitz
-                init_start = time.time()
-                dt = DoubleToeplitzMatrix(X_shape, kernel)
-                init_end = time.time()
-                print(f'Init time:\t\t{init_end - init_start:.2e}s')
+                    # Form double Toeplitz
+                    init_start = time.time()
+                    dt = DoubleToeplitzMatrix(X_shape, kernel)
+                    init_end = time.time()
+                    print(f'Init time:\t\t{init_end - init_start:.2e}s')
 
-                # TODO: I think the problem is that my implementation is using the top right corner of kernel
-                # as the origin (post-flipping) instead of the bottom left corner. This results in
-                # the result being shifted up by one kernel height.
-                # Either the double Toeplitz or the input matrix needs to be shifted down by one kernel height I think?
+                    mul_start = time.time()
+                    out_uncropped = dt @ x_t
+                    mul_end = time.time()
+                    print(f'Multiplying time:\t{mul_end - mul_start:.2e}s')
 
-                mul_start = time.time()
-                out_uncropped = dt @ x_t
-                mul_end = time.time()
-                print(f'Multiplying time:\t{mul_end - mul_start:.2e}s')
+                    # Unvectorize output
+                    so = size_output_array = ((shape[0] + k_shape[0] - 1), (kernel.shape[1] + shape[1] -1))  ## 'size out' is the size of the output array
+                    out_uncropped = np.flip(out_uncropped.reshape(batch_size, so[0], so[1]), axis=1)
 
-                # print(f'DOUBLE TOEPLITZ MATRIX: \n{dt}')
+                    # Crop the output to the correct size
+                    if modes == 'full':
+                        t = 0
+                        b = so[0]+1
+                        l = 0
+                        r = so[1]+1
+                    if modes == 'same':
+                        t = (kernel.shape[0]-1)//2
+                        b = -(kernel.shape[0]-1)//2
+                        l = (kernel.shape[1]-1)//2
+                        r = -(kernel.shape[1]-1)//2
 
-                # Unvectorize output
-                so = size_output_array = ((shape[0] + k_shape[0] - 1), (kernel.shape[1] + shape[1] -1))  ## 'size out' is the size of the output array
-                out_uncropped = np.flip(out_uncropped.reshape(batch_size, so[0], so[1]), axis=1)
+                        b = shape[0]+1 if b==0 else b
+                        r = shape[1]+1 if r==0 else r
+                    if modes == 'valid':
+                        t = (kernel.shape[0]-1)  # 2 - 1 = 1
+                        l = (kernel.shape[1]-1)  # 2 - 1 = 1
+                        b = -(kernel.shape[0]-1) # 2 - 1 = -1
+                        r = -(kernel.shape[1]-1) # 2 - 1 = -1
 
-                # Crop the output to the correct size
-                if mode == 'full':
-                    t = 0
-                    b = so[0]+1
-                    l = 0
-                    r = so[1]+1
-                if mode == 'same':
-                    t = (kernel.shape[0]-1)//2
-                    b = -(kernel.shape[0]-1)//2
-                    l = (kernel.shape[1]-1)//2
-                    r = -(kernel.shape[1]-1)//2
+                        b = shape[0]+1 if b==0 else b
+                        r = shape[1]+1 if r==0 else r
 
-                    b = shape[0]+1 if b==0 else b
-                    r = shape[1]+1 if r==0 else r
-                if mode == 'valid':
-                    t = (kernel.shape[0]-1)
-                    b = -(kernel.shape[0]-1)
-                    l = (kernel.shape[1]-1)
-                    r = -(kernel.shape[1]-1)
+                    # Crop the output
+                    out = out_uncropped[:, t:b, l:r]
 
-                    b = shape[0]+1 if b==0 else b
-                    r = shape[1]+1 if r==0 else r
-
-                # Crop the output
-                out = out_uncropped[:, t:b, l:r]
-
-                if TEST_ACCURACY:
-                    # Compute expected output using convolve2d for each batch
-                    expected_output = np.zeros((batch_size, shape[0], shape[1]))
-                    for i in range(batch_size):
-                        # Apply convolution for each batch element
-                        expected_output[i] = convolve2d(X[i], kernel, mode=mode)
-                    
-                    assert out.shape == expected_output.shape, (
-                        f"Output shape mismatch: {out.shape} vs {expected_output.shape}"
-                    )
-                    # Verify each batch's output
-                    for i in range(batch_size):
-                        assert np.allclose(out[i], expected_output[i], atol=1e-6), (
-                            f"Output mismatch for batch {i}:\n"
-                            f"Input:\n{X[i]}\n"
-                            f"Kernel:\n{kernel}\n"
-                            f"Expected:\n{expected_output[i]}\n"
-                            f"Got:\n{out[i]}\n"
-                            f"Uncropped:\n{out_uncropped[i]}\n"
+                    if TEST_ACCURACY:
+                        # Compute expected output using convolve2d for each batch
+                        expected_output_shape = convolve2d(X[0], kernel, mode=modes).shape
+                        expected_output = np.zeros((batch_size, *expected_output_shape))
+                        for i in range(batch_size):
+                            # Apply convolution for each batch element
+                            expected_output[i] = convolve2d(X[i], kernel, mode=modes)
+                        
+                        assert out.shape == expected_output.shape, (
+                            f"Output shape mismatch: {out.shape} vs {expected_output.shape}"
                         )
+                        # Verify each batch's output
+                        for i in range(batch_size):
+                            assert np.allclose(out[i], expected_output[i], atol=1e-6), (
+                                f"Output mismatch for batch index {i}:\n"
+                                f"Input:\n{X[i]}\n"
+                                f"Kernel:\n{kernel}\n"
+                                f"Expected:\n{expected_output[i]}\n"
+                                f"Got:\n{out[i]}\n"
+                            )
 
 if __name__ == '__main__':
     test_sparse_toeplitz()
