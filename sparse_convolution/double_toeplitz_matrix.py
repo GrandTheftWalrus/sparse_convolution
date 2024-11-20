@@ -1,44 +1,19 @@
 import numpy as np
-from typing import Tuple
-from scipy.sparse import spmatrix
+from typing import Tuple, List
 
-# TODO: This is all straight from ChatGPT. I need to go through it and verify/fix it.
+class DoubleToeplitzHelper():
+    def __init__(self, input_matrix_shape: Tuple[int, int], kernel: np.ndarray) -> None:
+        self.input_matrix_shape: Tuple[int, int] = input_matrix_shape
+        # self.kernel: np.ndarray = np.flip(kernel) # TODO: Make sure that flipping the kernel is correct
+        self.kernel: np.ndarray = kernel # TODO: Make sure that flipping the kernel is correct
+        self.padded_kernel_height: int = input_matrix_shape[0] + kernel.shape[0] - 1
+        self.padded_kernel_width: int = input_matrix_shape[1] + kernel.shape[1] - 1
 
-class DoubleToeplitzMatrix(spmatrix):
-    def __init__(self, input_size: Tuple[int, int, int], kernel: np.ndarray):
-        """
-        Initialize the Toeplitz-like sparse matrix.
+        self.single_toeplitz_height: int = self.padded_kernel_width
+        self.single_toeplitz_width: int = input_matrix_shape[1]
+        self.shape: Tuple[int, int] = (self.single_toeplitz_height * self.padded_kernel_height, self.single_toeplitz_width * input_matrix_shape[0])
 
-        Args:
-            input_size (tuple): Dimensions of the input matrix (n, rows, cols).
-            kernel_values (np.ndarray): Values of the kernel.
-        """
-        self.input_size = input_size  # (batch_size, rows, cols)
-        self.kernel_size = kernel.shape  # (rows, cols)
-        self.kernel_values = kernel  # Kernel values as a 2D array
-
-        batch_size, input_rows, input_cols = input_size
-        self.padded_kernel_height = input_rows + self.kernel_size[0] - 1
-        self.padded_kernel_width = input_cols + self.kernel_size[1] - 1
-
-        self.single_toeplitz_height = self.padded_kernel_width
-        self.single_toeplitz_width = input_size[2]
-        self._shape = (self.single_toeplitz_height * self.padded_kernel_height, self.single_toeplitz_width * input_size[1])
-
-    @property
-    def shape(self):
-        """
-        Return the shape of the matrix.
-        """
-        return self._shape
-
-    def reshape(self, shape):
-        """
-        This method is required by the `spmatrix` class but is not implemented for this matrix type.
-        """
-        raise NotImplementedError("reshape is not implemented for DoubleToeplitzMatrix")
-
-    def _compute_value(self, row, col):
+    def get_value(self, row: int, col: int) -> float:
         """
         Compute the value of the matrix at position (row, col) dynamically.
         """
@@ -48,88 +23,38 @@ class DoubleToeplitzMatrix(spmatrix):
         toeplitz_row = row % self.single_toeplitz_height
         toeplitz_col = col % self.single_toeplitz_width
 
-        padded_kernel_row = (self.kernel_size[0] - 1) - (toeplitz_y - toeplitz_x) # Not sure why this needed to be -2 instead of -1
+        padded_kernel_row = (self.kernel.shape[0] - 1) - (toeplitz_y - toeplitz_x) # Not sure why this needed to be -2 instead of -1
         padded_kernel_col = toeplitz_row - toeplitz_col
 
         # If the row/col is outside the kernel, return 0
         if (padded_kernel_row < 0
-            or padded_kernel_row >= self.kernel_size[0]
+            or padded_kernel_row >= self.kernel.shape[0]
             or padded_kernel_col < 0
-            or padded_kernel_col >= self.kernel_size[1]):
+            or padded_kernel_col >= self.kernel.shape[1]):
             return 0.0
 
-        return self.kernel_values[padded_kernel_row, padded_kernel_col]
+        return self.kernel[padded_kernel_row, padded_kernel_col]
 
-    def __getitem__(self, index):
+    def get_nonzero_rows(self, j: int) -> List[int]:
         """
-        Retrieve the value at the given index.
-        Args:
-            index (tuple): (row, col) for the matrix entry.
-        Returns:
-            float: The matrix value.
+        Get the indices of nonzero elements in the j-th column of the matrix.
         """
-        row, col = index
-        if row < 0 or col < 0 or row >= self.shape[0] or col >= self.shape[1]:
-            raise IndexError("Index out of bounds")
-        return self._compute_value(row, col)
+        # Toeplitz block column index
+        tb_j = j // self.single_toeplitz_width
 
-    def __matmul__(self, B: np.ndarray):
-        """
-        Matrix multiplication (overriding the @ operator).
-        Args:
-            B (np.ndarray): The input matrix.
-        Returns:
-            np.ndarray: Result of the multiplication.
-        """
-        if B.shape[0] != self.shape[1]:
-            raise ValueError("Dimension mismatch for matrix multiplication: {} vs {}".format(B.shape[0], self.shape[1]))
+        # Column of inner Toeplitz
+        t_j = j % self.single_toeplitz_width
 
-        result = np.zeros((self.shape[0], B.shape[1]))
-        B_nonzero_indices = list(zip(*np.nonzero(B)))
-        tpz_height_width_diff = self.single_toeplitz_height - self.single_toeplitz_width
-        for X_row in range(self.shape[0]):
-            for v_row, v_col in B_nonzero_indices:
-                if v_row > X_row: # The upper triangle is all zeros
-                    continue
-                # TODO: Double check the logic here.
-                # NOTE: I think it's actually working tf?
-                diag_offset = tpz_height_width_diff*(v_row // self.single_toeplitz_width)
-                if (X_row - v_row) % self.single_toeplitz_height - diag_offset > self.kernel_size[1] - 1: # Diagonals that start in the padded region are all zeros
-                    continue
-                # Note: we're still running these calculations for every nonzero element in B.
-                result[X_row, v_col] += self._compute_value(X_row, v_row) * B[v_row, v_col]
-        
-        return result
+        # The toeplitzes are all empty up until the first diagonal
+        start_row = tb_j * self.single_toeplitz_height
+        indices: List[Tuple[int, int]] = []
+        # For each nonzero inner toeplitz
+        for i in range(start_row, self.shape[0], self.single_toeplitz_height):
+            # (We are now at the top of a nonzero inner toeplitz)
+            inner_start_row = t_j
+            for i_inner in range(inner_start_row, inner_start_row + self.kernel.shape[1]):
+                # Final indices
+                indices.append(i + i_inner)
 
-    def toarray(self):
-        """
-        Convert to a dense array (use only for testing or small cases!).
-        """
-        dense = np.zeros(self.shape)
-        for i in range(self.shape[0]):
-            for j in range(self.shape[1]):
-                dense[i, j] = self._compute_value(i, j)
-        return dense
-
-    def todense(self):
-        """
-        Alias for `toarray`.
-        """
-        return self.toarray()
-
-    def __str__(self):
-        """
-        Return a string representation of the DoubleToeplitzMatrix.
-        Shows the top-left corner of the matrix for large dimensions.
-        """
-        # Generate the matrix representation
-        matrix_str = []
-        for row in range(self.shape[0]):
-            row_str = []
-            for col in range(self.shape[1]):
-                row_str.append(f"{self._compute_value(row, col):.2f}\t")
-            matrix_str.append(" ".join(row_str))
-
-        # Combine rows into a single string
-        return "\n".join(matrix_str)
+        return indices
 

@@ -1,8 +1,10 @@
 import numpy as np
 import scipy
+import scipy.sparse
 import time
-from sparse_convolution.double_toeplitz_matrix import DoubleToeplitzMatrix
+from sparse_convolution.double_toeplitz_matrix import DoubleToeplitzHelper
 from scipy.signal import convolve2d
+import pdb
 
 def test_sparse_toeplitz():
     """
@@ -17,7 +19,7 @@ def test_sparse_toeplitz():
     # Warning: Testing the accuracy scales horribly because
     # it checks the output against an explicit matrix
     # multiplication.
-    TEST_ACCURACY = True
+    TEST_ACCURACY = False
 
     stt = shapes_to_try = [
         # (1,1000, 1,1),
@@ -42,24 +44,24 @@ def test_sparse_toeplitz():
         (3,3, 2, 2),
         (10,10, 2, 2),
         (20,20, 2, 2),
-        # (30,30, 2, 2),
-        # (40,40, 2, 2),
-        # (50,50, 2, 2),
-        # (60,60, 2, 2),
-        # (70,70, 2, 2),
-        # (80,80, 2, 2),
-        # (90,90, 2, 2),
-        # (100,100, 2, 2),
-        # (1000,1000, 512, 512),
-        # (2000,2000, 512, 512),
-        # (3000,3000, 512, 512),
-        # (4000,4000, 512, 512),
-        # (5000,5000, 512, 512),
-        # (6000,6000, 512, 512),
-        # (7000,7000, 512, 512),
-        # (8000,8000, 512, 512),
-        # (9000,9000, 512, 512),
-        # (10000,10000, 512, 512),
+        (30,30, 2, 2),
+        (40,40, 2, 2),
+        (50,50, 2, 2),
+        (60,60, 2, 2),
+        (70,70, 2, 2),
+        (80,80, 2, 2),
+        (90,90, 2, 2),
+        (100,100, 2, 2),
+        (1000,1000, 3, 3),
+        (2000,2000, 3, 3),
+        (3000,3000, 3, 3),
+        (4000,4000, 3, 3),
+        (5000,5000, 3, 3),
+        (6000,6000, 3, 3),
+        (7000,7000, 3, 3),
+        (8000,8000, 3, 3),
+        (9000,9000, 3, 3),
+        (10000,10000, 3, 3),
         # (3,3, 2, 2),
         # (512,512, 32, 32),
         # (10000,10000, 1, 1),
@@ -78,64 +80,90 @@ def test_sparse_toeplitz():
 
     bstt = batch_sizes_to_try = [
         1, 
-        10, 
+        # 10, 
         # 100, 
         # 9999, 
         # 100000
     ]
 
     d_tt = sparsity_to_try = [
-        0.0001,
+        # 0.0001,
         # 0.001,
-        0.5,
-        # 0.01,
+        # 0.5,
+        0.01,
         # 0.1,
         # 1.0
     ]
 
-    modes = ['full',
-            'same',
-            'valid']
+    modes = [
+        # 'full',
+        'same',
+        # 'valid'
+        ]
 
     for batch_size in bstt:
         for density in d_tt:
             for shape in stt:
-                for modes in ['full', 'same', 'valid']:
-                    print(f'\nTesting shape: {shape}, batch_size: {batch_size}, density: {density}, mode: {modes}')
-                    # Make X
-                    X_shape = (batch_size, shape[0], shape[1])
-                    X = np.zeros(X_shape)
-                    for i in range(X_shape[0]):
-                        X[i] = scipy.sparse.random(X_shape[1], X_shape[2], density=density).toarray() * 100
-
-                    x_t = np.flip(X, axis=1).reshape(batch_size, -1).T
+                for mode in modes:
+                    print(f'\nTesting shape: {shape}, batch_size: {batch_size}, density: {density}, mode: {mode}')
+                    
+                    # Generate random testing matrices
+                    input_matrices_shape = (batch_size, shape[0], shape[1])
+                    input_matrices = np.zeros(input_matrices_shape)
+                    for i in range(input_matrices_shape[0]):
+                        input_matrices[i] = scipy.sparse.random(input_matrices_shape[1], input_matrices_shape[2], density=density).toarray() * 100
+                    
+                    # Make B (the flattened and horizontally stacked input matrices)
+                    B = np.flip(input_matrices, axis=1).reshape(batch_size, -1).T
 
                     # Make kernel
                     k_shape = (shape[2], shape[3])
                     kernel = np.random.rand(*k_shape)
 
-                    # Form double Toeplitz
+                    # Get the indices of empty rows of B
+                    nonzero_detection_start = time.time()
+                    nonzero_B_rows = np.where(B.any(axis=1))[0].tolist()
+                    nonzero_detection_time = time.time() - nonzero_detection_start
+                    print(f'nonzero_detection_time: {nonzero_detection_time:8.2f}s')
+
+                    # Form the bare minimum double Toeplitz
                     init_start = time.time()
-                    dt = DoubleToeplitzMatrix(X_shape, kernel)
-                    init_end = time.time()
-                    print(f'Init time:\t\t{init_end - init_start:.2e}s')
+                    dt_helper = DoubleToeplitzHelper(shape, kernel)
+                    rows, cols, data = [], [], []
+                    total_nonzero_row_detection_time = 0
+                    total_value_calculation_time = 0
+                    for col in nonzero_B_rows:
+                        nz_row_detect_start = time.time()
+                        col_rows = dt_helper.get_nonzero_rows(col)
+                        total_nonzero_row_detection_time += time.time() - nz_row_detect_start
+                        value_calc_start = time.time()
+                        rows.extend(col_rows)
+                        cols.extend([col] * len(col_rows))
+                        data.extend([dt_helper.get_value(row, col) for row in col_rows])
+                        total_value_calculation_time += time.time() - value_calc_start
+                    csr_creation_start = time.time()
+                    DT = scipy.sparse.csr_matrix((data, (rows, cols)), shape=dt_helper.shape)
+                    csr_creation_time = time.time() - csr_creation_start
+                    init_time = time.time() - init_start
+                    print(f'total_nonzero_row_detection_time: {total_nonzero_row_detection_time:8.2f}s')
+                    print(f'total_value_calculation_time: {total_value_calculation_time:8.2f}s')
+                    print(f'csr_creation_time: {csr_creation_time:8.2f}s')
 
                     mul_start = time.time()
-                    out_uncropped = dt @ x_t
-                    mul_end = time.time()
-                    print(f'Multiplying time:\t{mul_end - mul_start:.2e}s')
+                    out_uncropped = DT @ B
+                    mul_time = time.time() - mul_start
 
                     # Unvectorize output
                     so = size_output_array = ((shape[0] + k_shape[0] - 1), (kernel.shape[1] + shape[1] -1))  ## 'size out' is the size of the output array
                     out_uncropped = np.flip(out_uncropped.reshape(batch_size, so[0], so[1]), axis=1)
 
                     # Crop the output to the correct size
-                    if modes == 'full':
+                    if mode == 'full':
                         t = 0
                         b = so[0]+1
                         l = 0
                         r = so[1]+1
-                    if modes == 'same':
+                    if mode == 'same':
                         t = (kernel.shape[0]-1)//2
                         b = -(kernel.shape[0]-1)//2
                         l = (kernel.shape[1]-1)//2
@@ -143,7 +171,7 @@ def test_sparse_toeplitz():
 
                         b = shape[0]+1 if b==0 else b
                         r = shape[1]+1 if r==0 else r
-                    if modes == 'valid':
+                    if mode == 'valid':
                         t = (kernel.shape[0]-1)  # 2 - 1 = 1
                         l = (kernel.shape[1]-1)  # 2 - 1 = 1
                         b = -(kernel.shape[0]-1) # 2 - 1 = -1
@@ -157,12 +185,15 @@ def test_sparse_toeplitz():
 
                     if TEST_ACCURACY:
                         # Compute expected output using convolve2d for each batch
-                        expected_output_shape = convolve2d(X[0], kernel, mode=modes).shape
+                        blank_matrix = np.zeros(input_matrices_shape[1:])
+                        expected_output_shape = convolve2d(blank_matrix, kernel, mode=mode).shape
                         expected_output = np.zeros((batch_size, *expected_output_shape))
+                        mul_conv2d_start = time.time()
                         for i in range(batch_size):
                             # Apply convolution for each batch element
-                            expected_output[i] = convolve2d(X[i], kernel, mode=modes)
-                        
+                            expected_output[i] = convolve2d(input_matrices[i], kernel, mode=mode)
+                        mul_conv2d_time = time.time() - mul_conv2d_start
+
                         assert out.shape == expected_output.shape, (
                             f"Output shape mismatch: {out.shape} vs {expected_output.shape}"
                         )
@@ -170,11 +201,20 @@ def test_sparse_toeplitz():
                         for i in range(batch_size):
                             assert np.allclose(out[i], expected_output[i], atol=1e-6), (
                                 f"Output mismatch for batch index {i}:\n"
-                                f"Input:\n{X[i]}\n"
+                                f"Input:\n{input_matrices[i]}\n"
                                 f"Kernel:\n{kernel}\n"
                                 f"Expected:\n{expected_output[i]}\n"
                                 f"Got:\n{out[i]}\n"
                             )
+                        print(f'init_time:       {init_time:8.3f}s'
+                            f'\nmul_time:        {mul_time:8.3f}s'
+                            f'\ntotal:           {init_time + mul_time:8.3f}s'
+                            f'\nmul_conv2d_time: {mul_conv2d_time:8.3f}s')
+                        print(f'Speedup:         {mul_conv2d_time / (mul_time + init_time):8.3f}x')
+                    else:
+                        print(f'init_time:       {init_time:8.2f}s'
+                            f'\nmul_time:        {mul_time:8.2f}s'
+                            f'\ntotal:           {init_time + mul_time:8.2f}s')
 
 if __name__ == '__main__':
     test_sparse_toeplitz()

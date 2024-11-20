@@ -34,9 +34,9 @@ Answer: The only way that it can be better is if it can fetch the indices of a r
 
 This shortened double Toeplitz would be sN^2 x KN in size. Lots and lots of calculated zeros, still, and this is basically the same scaling as an unoptimized double Toeplitz. We would have to identify which rows of the columns of interest are nonzero without manually checking them all.
 
-- Flatten input matrices and horizontally stack them in CSC format. Call this `B`.
-- Detect empty row indices of B to know which columns of the double toeplitz will be relevant
-- For each such column, do get_nonzero_indices(col_idx). This is efficient and runs in O(Z) where Z is the number of nonzero rows in the column to be returned.
+- ✅ Flatten input matrices and horizontally stack them in CSC format. Call this `B`.
+- ✅ Detect nonzero row indices of B to know which columns of the double toeplitz will be relevant
+- ✅ For each such column, do get_nonzero_indices(col_idx). This is efficient and runs in O(Z) where Z is the number of nonzero rows in the column to be returned.
 - For each of these relevant coordinates of the DT, compute their value with compute_value(row, col) and add them to a sparse CSR matrix 'DT'.
 - Perform DT @ B
 - Reshape result to proper dimensions
