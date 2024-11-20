@@ -8,3 +8,74 @@ Toeplitz matrices have a couple properties that make them a useful intermediary 
 ## Explanation of double Toeplitz usage in 2D convolution
 
 https://stackoverflow.com/questions/16798888/2-d-convolution-as-a-matrix-matrix-multiplication
+
+
+A way that we can use memory-sharing is by only storing the very bottom set of Toeplitzes of the double Toeplitz. All multiplications can be performed with this submatrix, only needing to offset it according to what row it is pretending to be. This will reduce the memory footprint from O(KN^3) to O(N^3), when compared to a full materialized double Toeplitz. I guess that isn't very good yet, but it's still better. I think even parts of the row might be able to be memory-shared, though. Let me think. Edit: doesn't matter too much for our overall time complexity since we would only be reducing the memory footprint at one time, not the number of operations needed to be done.
+
+There are N-K-1 empty Toeplitzes, due to padding. However, they are distributed in the double Toeplitz across its diagonals, so the double Toeplitz still won't have any empty rows (unless the kernel had empty rows, but it shouldn't). The only way the double Toeplitz would have any empty rows or columns (besides the kernel having empty rows), is the input matrix being much wider than it is tall. This would result in the kernel values on the diagonal of each inner Toeplitz not reaching its bottom-right corner. If the input matrix is mostly square, there'll be few or no empty rows. Anyway, we clearly can't count at all on there being empty rows or columns in the input matrix I.
+
+There *will* be pissloads of empty diagonals, however. Can we somehow use this sparsity to optimize matrix multiplication? If for a given row of the double Toeplitz, we could automatically know which of its columns are nonzero, we could reduce the number of accesses per row (and therefore in total) by a factor of K/N, which is a lot. In fact, that would take our time complexity w.r.t. the matrix down from O(KN^3) to O(K^2N^2), which is much better because K should be small compared to N. With exploiting the sparsity of B as well, we could get down to O(sK^2N^2), where the sparsity s < 1 (and is often like 0.01, but anyway, it's still linear.)
+
+Since the above mentioned sparsity exploitation would theoretically eliminate any empty cells needing to be accessed per row, it would eliminate them from needing to be accessed for the entire matrix. The number of nonzero cells per inner Toeplitz, assuming a square and non-empty kernel, is
+
+    $\sum_{i=0} ^{i=K} n$
+
+which just scales according to O(NK). Therefore, the minimum number of elements necessary to access in the double Toeplitz scales according to O(N^2*K^2), which is the same as regular convolution. Taking the sparsity exploitation of B into account again, our total time complexity becomes O(sN^2K^2), which is finally the logical conclusion of sparse matrix multiplication optimization, and better than regular direct convolution. It still supports batching, too. We will have to take into account the time needed to precompute the empty rows of B (which is LN^2, where L is batch size), and the empty cells of the double Toeplitz.
+
+I need a way to *very efficiently* know which indices of a row of a double Toeplitz matrix are nonzero. If it is any worse than O(M), where M is the width of the double Toeplitz (which is equal to N^2), then we break even with the time we would save and the whole time complexity goes back to being O(KN^3) or worse, which was unfeasable.
+
+Take the idea from earlier which was to precompute only the bottom row of Toeplitzes. Without further optimization, this alone takes O(N^3) time, which is terrible. However, we know that only K/N of it is nonzero, which equates to KN^2 indices, and their locations are all along only the first K diagonals of each Toeplitz.
+
+
+Is this better than the current implementation, which already only computes the nonzero values of both the double Toeplitz and the B matrix?
+Answer: The only way that it can be better is if it can fetch the indices of a row of the double Toeplitz that are nonzero AND correspond to a nonzero row of B, WITH SHORT CIRCUITING (ideally starting with the one that is lesser). That is, if it fetches all nonzero indices of the row, full stop, then it's not an improvement. The current implementation's time complexity is already O(K^2N^2). The best we can do is make it O(sK^2N^2). Hmmmmm. Maybe this can simply be done by detecting the nonzero rows of B.
+- Get indices of empty rows of B to know the cols of interest of the DT
+- Generate shortened double Toeplitz by only computing the corresponding columns
+
+This shortened double Toeplitz would be sN^2 x KN in size. Lots and lots of calculated zeros, still, and this is basically the same scaling as an unoptimized double Toeplitz. We would have to identify which rows of the columns of interest are nonzero without manually checking them all.
+
+- Flatten input matrices and horizontally stack them in CSC format. Call this `B`.
+- Detect empty row indices of B to know which columns of the double toeplitz will be relevant
+- For each such column, do get_nonzero_indices(col_idx). This is efficient and runs in O(Z) where Z is the number of nonzero rows in the column to be returned.
+- For each of these relevant coordinates of the DT, compute their value with compute_value(row, col) and add them to a sparse CSR matrix 'DT'.
+- Perform DT @ B
+- Reshape result to proper dimensions
+
+Finally, this reduces our time (and I think space) complexity from O(N^2K^2) to O(sN^2K^2), s < 1. Sparsity of 0.01 results in 100x speedup, probably.
+Batching is still supported (though it asymptotically diminishes the sparsity exploitation gains)
+
+Time to find empty rows of B + time to fetch nonzero rows of relevant columns + time to calculate relevant elements + time to do DT @ B
+=
+O(N^2 + sK^2N^2 + sK^2N^2 + (sK^2N^2 + sLN^2 + sN^2K^2))
+O(sK^2N^2)
+
+-------
+# THE FORMULA
+# For any given column j, get the nonzero rows i
+def get_nonzero_indices(col j):
+    # N is the input matrix width
+    t_width = N
+    t_height = N + kernel_width - 1
+
+    # Toeplitz block column index
+    tb_j = j // t_width
+
+    # Column relative to inner Toeplitz
+    t_i = tb_j % t_width
+
+    # The toeplitzes are all empty up until the first diagonal
+    start_row = tb_j * t_height
+    end_row = t_height*kernel_height
+    indices = []
+    # For each nonzero inner toeplitz
+    for i in range(start_row, end_row, t_height):
+        # (We are now at the start of a nonzero inner toeplitz)
+        inner_start_row = t_i
+        for i_inner in range(inner_start_row, inner_start_row + kernel_width):
+            # Final indices
+            indices.append((j, i + i_inner))
+
+    return indices
+------
+
+

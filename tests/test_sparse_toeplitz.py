@@ -17,7 +17,7 @@ def test_sparse_toeplitz():
     # Warning: Testing the accuracy scales horribly because
     # it checks the output against an explicit matrix
     # multiplication.
-    TEST_ACCURACY = False
+    TEST_ACCURACY = True
 
     stt = shapes_to_try = [
         # (1,1000, 1,1),
@@ -39,18 +39,27 @@ def test_sparse_toeplitz():
         # (256,256, 10,10),
         # (1024,1024, 10,10),
         (2,3, 2, 2),
+        (3,3, 2, 2),
         (10,10, 2, 2),
         (20,20, 2, 2),
-        (1000,1000, 512, 512),
-        (2000,2000, 512, 512),
-        (3000,3000, 512, 512),
-        (4000,4000, 512, 512),
-        (5000,5000, 512, 512),
-        (6000,6000, 512, 512),
-        (7000,7000, 512, 512),
-        (8000,8000, 512, 512),
-        (9000,9000, 512, 512),
-        (10000,10000, 512, 512),
+        (30,30, 2, 2),
+        (40,40, 2, 2),
+        (50,50, 2, 2),
+        (60,60, 2, 2),
+        (70,70, 2, 2),
+        (80,80, 2, 2),
+        (90,90, 2, 2),
+        (100,100, 2, 2),
+        # (1000,1000, 512, 512),
+        # (2000,2000, 512, 512),
+        # (3000,3000, 512, 512),
+        # (4000,4000, 512, 512),
+        # (5000,5000, 512, 512),
+        # (6000,6000, 512, 512),
+        # (7000,7000, 512, 512),
+        # (8000,8000, 512, 512),
+        # (9000,9000, 512, 512),
+        # (10000,10000, 512, 512),
         # (3,3, 2, 2), # TODO: Fix how it fails if the input matrix height is incerased by 1 (increasing the other values by 1 works though)
         # (512,512, 32, 32),
         # (10000,10000, 1, 1),
@@ -106,12 +115,17 @@ def test_sparse_toeplitz():
 
                 # Form double Toeplitz
                 init_start = time.time()
-                dt = DoubleToeplitzMatrix(X_shape, k_shape, kernel)
+                dt = DoubleToeplitzMatrix(X_shape, kernel)
                 init_end = time.time()
                 print(f'Init time:\t\t{init_end - init_start:.2e}s')
 
+                # TODO: I think the problem is that my implementation is using the top right corner of kernel
+                # as the origin (post-flipping) instead of the bottom left corner. This results in
+                # the result being shifted up by one kernel height.
+                # Either the double Toeplitz or the input matrix needs to be shifted down by one kernel height I think?
+
                 mul_start = time.time()
-                out = dt @ x_t
+                out_uncropped = dt @ x_t
                 mul_end = time.time()
                 print(f'Multiplying time:\t{mul_end - mul_start:.2e}s')
 
@@ -119,7 +133,7 @@ def test_sparse_toeplitz():
 
                 # Unvectorize output
                 so = size_output_array = ((shape[0] + k_shape[0] - 1), (kernel.shape[1] + shape[1] -1))  ## 'size out' is the size of the output array
-                out = np.flip(out.reshape(batch_size, so[0], so[1]), axis=1)
+                out_uncropped = np.flip(out_uncropped.reshape(batch_size, so[0], so[1]), axis=1)
 
                 # Crop the output to the correct size
                 if mode == 'full':
@@ -145,8 +159,7 @@ def test_sparse_toeplitz():
                     r = shape[1]+1 if r==0 else r
 
                 # Crop the output
-                out = out[:, t:b, l:r]
-                # print(f'OUTPUT: \n{out.round(2)}')
+                out = out_uncropped[:, t:b, l:r]
 
                 if TEST_ACCURACY:
                     # Compute expected output using convolve2d for each batch
@@ -162,8 +175,11 @@ def test_sparse_toeplitz():
                     for i in range(batch_size):
                         assert np.allclose(out[i], expected_output[i], atol=1e-6), (
                             f"Output mismatch for batch {i}:\n"
+                            f"Input:\n{X[i]}\n"
+                            f"Kernel:\n{kernel}\n"
                             f"Expected:\n{expected_output[i]}\n"
-                            f"Got:\n{out[i]}"
+                            f"Got:\n{out[i]}\n"
+                            f"Uncropped:\n{out_uncropped[i]}\n"
                         )
 
 if __name__ == '__main__':

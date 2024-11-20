@@ -5,22 +5,21 @@ from scipy.sparse import spmatrix
 # TODO: This is all straight from ChatGPT. I need to go through it and verify/fix it.
 
 class DoubleToeplitzMatrix(spmatrix):
-    def __init__(self, input_size: Tuple[int, int, int], kernel_size: Tuple[int, int], kernel_values: np.ndarray):
+    def __init__(self, input_size: Tuple[int, int, int], kernel: np.ndarray):
         """
         Initialize the Toeplitz-like sparse matrix.
 
         Args:
             input_size (tuple): Dimensions of the input matrix (n, rows, cols).
-            kernel_size (tuple): Dimensions of the kernel (rows, cols).
             kernel_values (np.ndarray): Values of the kernel.
         """
         self.input_size = input_size  # (batch_size, rows, cols)
-        self.kernel_size = kernel_size  # (rows, cols)
-        self.kernel_values = kernel_values  # Kernel values as a 2D array
+        self.kernel_size = kernel.shape  # (rows, cols)
+        self.kernel_values = kernel  # Kernel values as a 2D array
 
         batch_size, input_rows, input_cols = input_size
-        self.padded_kernel_height = input_rows + kernel_size[0] - 1
-        self.padded_kernel_width = input_cols + kernel_size[1] - 1
+        self.padded_kernel_height = input_rows + self.kernel_size[0] - 1
+        self.padded_kernel_width = input_cols + self.kernel_size[1] - 1
 
         self.single_toeplitz_height = self.padded_kernel_width
         self.single_toeplitz_width = input_size[2]
@@ -48,11 +47,15 @@ class DoubleToeplitzMatrix(spmatrix):
         toeplitz_y = row // self.single_toeplitz_height
         toeplitz_row = row % self.single_toeplitz_height
         toeplitz_col = col % self.single_toeplitz_width
-        padded_kernel_row = self.padded_kernel_height - 2 - (toeplitz_y - toeplitz_x) # Not sure why this needed to be -2 instead of -1
+
+        padded_kernel_row = (self.kernel_size[0] - 1) - (toeplitz_y - toeplitz_x) # Not sure why this needed to be -2 instead of -1
         padded_kernel_col = toeplitz_row - toeplitz_col
 
         # If the row/col is outside the kernel, return 0
-        if padded_kernel_row < 0 or padded_kernel_row >= self.kernel_size[0] or padded_kernel_col < 0 or padded_kernel_col >= self.kernel_size[1]:
+        if (padded_kernel_row < 0
+            or padded_kernel_row >= self.kernel_size[0]
+            or padded_kernel_col < 0
+            or padded_kernel_col >= self.kernel_size[1]):
             return 0.0
 
         return self.kernel_values[padded_kernel_row, padded_kernel_col]
@@ -83,10 +86,17 @@ class DoubleToeplitzMatrix(spmatrix):
 
         result = np.zeros((self.shape[0], B.shape[1]))
         B_nonzero_indices = list(zip(*np.nonzero(B)))
+        tpz_height_width_diff = self.single_toeplitz_height - self.single_toeplitz_width
         for X_row in range(self.shape[0]):
             for v_row, v_col in B_nonzero_indices:
                 if v_row > X_row: # The upper triangle is all zeros
                     continue
+                # TODO: Double check the logic here.
+                # NOTE: I think it's actually working tf?
+                diag_offset = tpz_height_width_diff*(v_row // self.single_toeplitz_width)
+                if (X_row - v_row) % self.single_toeplitz_height - diag_offset > self.kernel_size[1] - 1: # Diagonals that start in the padded region are all zeros
+                    continue
+                # Note: we're still running these calculations for every nonzero element in B.
                 result[X_row, v_col] += self._compute_value(X_row, v_row) * B[v_row, v_col]
         
         return result
