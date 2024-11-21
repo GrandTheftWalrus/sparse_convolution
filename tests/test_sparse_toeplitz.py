@@ -40,9 +40,9 @@ def test_sparse_toeplitz():
         # (64,64, 10,10),
         # (256,256, 10,10),
         # (1024,1024, 10,10),
-        # (2,3, 2, 2),
-        # (3,3, 2, 2),
-        # (10,10, 2, 2),
+        (2,3, 2, 2),
+        (3,3, 2, 2),
+        (10,10, 2, 2),
         (20,20, 2, 2),
         (30,30, 2, 2),
         (40,40, 2, 2),
@@ -89,8 +89,8 @@ def test_sparse_toeplitz():
     d_tt = sparsity_to_try = [
         # 0.0001,
         # 0.001,
-        0.5,
-        # 0.01,
+        # 0.5,
+        0.01,
         # 0.1,
         # 1.0
     ]
@@ -132,7 +132,7 @@ def test_sparse_toeplitz():
                     # Currently nonzero_A_rows is a 2D array where the first dimension is the nonzero A column
                     # to which the row coordinates in the second dimension correspond.
                     # For testing porpoises, let's flatten nonzero_A_rows, and stretch out nonzero_A_cols accordingly
-                    rows_per_col = nonzero_A_rows.shape[1]
+                    rows_per_col = 1 if len(nonzero_A_rows.shape) == 1 else nonzero_A_rows.shape[1]
                     nonzero_A_rows = nonzero_A_rows.flatten()
                     nonzero_A_cols = np.repeat(nonzero_A_cols, rows_per_col)
 
