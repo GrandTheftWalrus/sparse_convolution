@@ -19,7 +19,7 @@ def test_sparse_toeplitz():
     # Warning: Testing the accuracy scales horribly because
     # it checks the output against an explicit matrix
     # multiplication.
-    TEST_ACCURACY = False
+    TEST_ACCURACY = True
 
     stt = shapes_to_try = [
         # (1,1000, 1,1),
@@ -40,9 +40,9 @@ def test_sparse_toeplitz():
         # (64,64, 10,10),
         # (256,256, 10,10),
         # (1024,1024, 10,10),
-        (2,3, 2, 2),
-        (3,3, 2, 2),
-        (10,10, 2, 2),
+        # (2,3, 2, 2),
+        # (3,3, 2, 2),
+        # (10,10, 2, 2),
         (20,20, 2, 2),
         (30,30, 2, 2),
         (40,40, 2, 2),
@@ -56,12 +56,12 @@ def test_sparse_toeplitz():
         (2000,2000, 3, 3),
         (3000,3000, 3, 3),
         (4000,4000, 3, 3),
-        (5000,5000, 3, 3),
-        (6000,6000, 3, 3),
-        (7000,7000, 3, 3),
-        (8000,8000, 3, 3),
-        (9000,9000, 3, 3),
-        (10000,10000, 3, 3),
+        # (5000,5000, 3, 3),
+        # (6000,6000, 3, 3),
+        # (7000,7000, 3, 3),
+        # (8000,8000, 3, 3),
+        # (9000,9000, 3, 3),
+        # (10000,10000, 3, 3),
         # (3,3, 2, 2),
         # (512,512, 32, 32),
         # (10000,10000, 1, 1),
@@ -89,8 +89,8 @@ def test_sparse_toeplitz():
     d_tt = sparsity_to_try = [
         # 0.0001,
         # 0.001,
-        # 0.5,
-        0.01,
+        0.5,
+        # 0.01,
         # 0.1,
         # 1.0
     ]
@@ -121,34 +121,30 @@ def test_sparse_toeplitz():
                     kernel = np.random.rand(*k_shape)
 
                     # Get the indices of empty rows of B
-                    nonzero_B_rows = np.where(B.any(axis=1))[0].tolist()
+                    nonzero_B_rows = np.where(B.any(axis=1))[0]
 
                     # Form the bare minimum double Toeplitz
                     init_start = time.time()
                     dt_helper = DoubleToeplitzHelper(shape, kernel)
-                    num_elements = len(nonzero_B_rows) * k_shape[0] * k_shape[1]
-                    rows = np.empty(num_elements, dtype=int)
-                    cols = np.empty(num_elements, dtype=int)
-                    data = np.empty(num_elements, dtype=float)
-                    total_value_calculation_time = 0
-                    current_index = 0
-                    for n, col in enumerate(nonzero_B_rows):
-                        nonzero_rows = dt_helper.get_nonzero_rows(col)
-                        num_rows = len(nonzero_rows)
-                        value_calc_start = time.time()
-                        # Assign values to the preallocated arrays
-                        rows[current_index:current_index + num_rows] = nonzero_rows
-                        cols[current_index:current_index + num_rows] = col
-                        data[current_index:current_index + num_rows] = [
-                            dt_helper.get_value(row, col) for row in nonzero_rows
-                        ]
-                        current_index += num_rows
-                        total_value_calculation_time += time.time() - value_calc_start
+                    nonzero_A_cols = nonzero_B_rows
+                    nonzero_A_rows = dt_helper.get_nonzero_rows_vectorized(nonzero_A_cols)
+                    
+                    # Currently nonzero_A_rows is a 2D array where the first dimension is the nonzero A column
+                    # to which the row coordinates in the second dimension correspond.
+                    # For testing porpoises, let's flatten nonzero_A_rows, and stretch out nonzero_A_cols accordingly
+                    rows_per_col = nonzero_A_rows.shape[1]
+                    nonzero_A_rows = nonzero_A_rows.flatten()
+                    nonzero_A_cols = np.repeat(nonzero_A_cols, rows_per_col)
 
-                    DT = scipy.sparse.csr_matrix((data, (rows, cols)), shape=dt_helper.shape)
+                    # This is serial and slow, but it's just for testing
+                    # that it still works
+                    data = np.empty(nonzero_A_cols.shape[0], dtype=float)
+                    for i in range(data.shape[0]):
+                        data[i] = dt_helper.get_value(nonzero_A_rows[i], nonzero_A_cols[i])
+                    DT = scipy.sparse.csr_matrix((data, (nonzero_A_rows, nonzero_A_cols)), shape=dt_helper.shape)
                     init_time = time.time() - init_start
-                    print(f'value calc time:\t{total_value_calculation_time:8.2f}s')
 
+                    # Do the roar
                     out_uncropped = DT @ B
 
                     # Unvectorize output
@@ -170,10 +166,10 @@ def test_sparse_toeplitz():
                         b = shape[0]+1 if b==0 else b
                         r = shape[1]+1 if r==0 else r
                     if mode == 'valid':
-                        t = (kernel.shape[0]-1)  # 2 - 1 = 1
-                        l = (kernel.shape[1]-1)  # 2 - 1 = 1
-                        b = -(kernel.shape[0]-1) # 2 - 1 = -1
-                        r = -(kernel.shape[1]-1) # 2 - 1 = -1
+                        t = (kernel.shape[0]-1)
+                        l = (kernel.shape[1]-1)
+                        b = -(kernel.shape[0]-1)
+                        r = -(kernel.shape[1]-1)
 
                         b = shape[0]+1 if b==0 else b
                         r = shape[1]+1 if r==0 else r
@@ -187,11 +183,11 @@ def test_sparse_toeplitz():
                         blank_matrix = np.zeros(input_matrices_shape[1:])
                         expected_output_shape = convolve2d(blank_matrix, kernel, mode=mode).shape
                         expected_output = np.zeros((batch_size, *expected_output_shape))
-                        mul_conv2d_start = time.time()
+                        conv2d_start = time.time()
                         for i in range(batch_size):
                             # Apply convolution for each batch element
                             expected_output[i] = convolve2d(input_matrices[i], kernel, mode=mode)
-                        mul_conv2d_time = time.time() - mul_conv2d_start
+                        conv2d_time = time.time() - conv2d_start
 
                         assert out.shape == expected_output.shape, (
                             f"Output shape mismatch: {out.shape} vs {expected_output.shape}"
@@ -207,8 +203,8 @@ def test_sparse_toeplitz():
                             )
                         print(f'init_time:       {init_time:8.3f}s'
                             f'\ntotal:           {time_taken:8.3f}s'
-                            f'\nmul_conv2d_time: {mul_conv2d_time:8.3f}s')
-                        print(f'Speedup:         {mul_conv2d_time / time_taken:8.3f}x')
+                            f'\nconv2d_time:     {conv2d_time:8.3f}s')
+                        print(f'Speedup:         {conv2d_time / time_taken:8.3f}x')
                     else:
                         print(f'init_time:       {init_time:8.2f}s'
                             f'\ntotal:           {time_taken:8.2f}s')
