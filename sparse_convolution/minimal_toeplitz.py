@@ -1,17 +1,26 @@
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional, Union
 import scipy.sparse
 
 class MinimalToeplitzConvolver():
-    def __init__(self, input_matrix_shape: Tuple[int, int], kernel: np.ndarray) -> None:
-        self.input_matrix_shape: Tuple[int, int] = input_matrix_shape
-        self.kernel: np.ndarray = kernel
-        self.padded_kernel_height: int = input_matrix_shape[0] + kernel.shape[0] - 1
-        self.padded_kernel_width: int = input_matrix_shape[1] + kernel.shape[1] - 1
-
+    def __init__(
+        self,
+        x_shape: Tuple[int, int],
+        k: np.ndarray,
+        mode: str = 'same',
+        dtype: Optional[np.dtype] = None,
+        verbose: Union[bool, int] = False,
+    ):
+        self.input_matrix_shape: Tuple[int, int] = x_shape
+        self.kernel: np.ndarray = k
+        self.mode = mode
+        self.dtype = dtype
+        self.verbose = verbose
+        self.padded_kernel_height: int = x_shape[0] + k.shape[0] - 1
+        self.padded_kernel_width: int = x_shape[1] + k.shape[1] - 1
         self.single_toeplitz_height: int = self.padded_kernel_width
-        self.single_toeplitz_width: int = input_matrix_shape[1]
-        self.shape: Tuple[int, int] = (self.single_toeplitz_height * self.padded_kernel_height, self.single_toeplitz_width * input_matrix_shape[0])
+        self.single_toeplitz_width: int = x_shape[1]
+        self.shape: Tuple[int, int] = (self.single_toeplitz_height * self.padded_kernel_height, self.single_toeplitz_width * x_shape[0])
 
     @staticmethod
     def convolve(input_matrices: np.ndarray, kernel: np.ndarray, mode) -> np.ndarray:

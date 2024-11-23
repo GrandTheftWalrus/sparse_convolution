@@ -2,9 +2,9 @@ import numpy as np
 import scipy
 import scipy.sparse
 import time
-from sparse_convolution.double_toeplitz_matrix import MinimalToeplitzConvolver
+from sparse_convolution.minimal_toeplitz import MinimalToeplitzConvolver
+from sparse_convolution.sparse_convolution import Toeplitz_convolution2d
 from scipy.signal import convolve2d
-import pdb
 
 def test_sparse_toeplitz():
     """
@@ -122,9 +122,14 @@ def test_sparse_toeplitz():
         # (256,256, 64,64),
     ]
 
-    bstt = batch_sizes_to_try = [
+    mt_tt = matrix_types_to_try = [
+        'dense',
+        'sparse',
+    ]
+
+    bs_tt = batch_sizes_to_try = [
         1, 
-        # 10, 
+        2, 
         # 100, 
         # 9999, 
         # 100000
@@ -184,55 +189,99 @@ def test_sparse_toeplitz():
         # 'valid'
         ]
 
-    for batch_size in bstt:
+    for batch_size in bs_tt:
         for density in d_tt:
             for shape in stt:
                 for mode in modes:
-                    print(f'\nTesting shape: {shape}, batch_size: {batch_size}, density: {density}, mode: {mode}')
-                    # Generate random testing matrices
-                    input_matrices_shape = (batch_size, shape[0], shape[1])
-                    input_matrices = np.zeros(input_matrices_shape)
-                    for i in range(input_matrices_shape[0]):
-                        input_matrices[i] = scipy.sparse.random(input_matrices_shape[1], input_matrices_shape[2], density=density).toarray() * 100
-                    
-                    # Make kernel
-                    k_shape = (shape[2], shape[3])
-                    kernel = np.random.rand(*k_shape)
+                    for matrix_type in mt_tt:
+                        print(f'\nTesting shape: {shape}, batch_size: {batch_size}, density: {density}, mode: {mode}, matrix type: {matrix_type}')
+                        # Generate random testing matrices
+                        input_matrices_shape = (batch_size, shape[0], shape[1])
+                        input_matrices_dense = None
+                        input_matrices_sparse = None
+                        np.random.seed(0)
+                        if batch_size == 1:
+                            input_matrices_sparse = scipy.sparse.random(shape[0], shape[1], density=density) * 100
+                            input_matrices_dense = input_matrices_sparse.toarray()
+                        else:
+                            input_matrices_dense = np.zeros(input_matrices_shape)
+                            input_matrices_sparse = []
+                            for i in range(batch_size):
+                                input_matrices_sparse.append(scipy.sparse.random(shape[0], shape[1], density=density) * 100)
+                                input_matrices_dense[i] = input_matrices_sparse[i].toarray()
+                            # Vertically stack sparse matrices
+                            input_matrices_sparse = scipy.sparse.vstack([_.reshape(1, -1) for _ in input_matrices_sparse]).tocsr()
+                        
+                        # Make dense kernel
+                        k_shape = (shape[2], shape[3])
+                        kernel = np.random.rand(*k_shape)
 
-                    start_time = time.time()
-                    output = MinimalToeplitzConvolver.convolve(input_matrices, kernel, mode)
-                    time_taken = time.time() - start_time
-
-                    if TEST_ACCURACY:
-                        # Compute expected output using convolve2d for each batch
-                        blank_matrix = np.zeros(input_matrices_shape[1:])
-                        expected_output_shape = convolve2d(blank_matrix, kernel, mode=mode).shape
-                        expected_output = np.zeros((batch_size, *expected_output_shape))
-                        conv2d_start = time.time()
-                        for i in range(batch_size):
-                            # Apply convolution for each batch element
-                            expected_output[i] = convolve2d(input_matrices[i], kernel, mode=mode)
-                        conv2d_time = time.time() - conv2d_start
-
-                        assert output.shape == expected_output.shape, (
-                            f"Output shape mismatch: {output.shape} vs {expected_output.shape}"
+                        # Test new implementation
+                        start_time_old = time.time()
+                        conv_new = MinimalToeplitzConvolver(
+                            x_shape=shape[:2],
+                            k=kernel,
+                            mode='same',
+                            dtype=np.float32,
                         )
-                        # Verify each batch's output
-                        for i in range(batch_size):
-                            assert np.allclose(output[i], expected_output[i], atol=1e-6), (
-                                f"Output mismatch for batch index {i}:\n"
-                                f"Input:\n{input_matrices[i]}\n"
-                                f"Kernel:\n{kernel}\n"
-                                f"Expected:\n{expected_output[i]}\n"
-                                f"Got:\n{output[i]}\n"
+
+                        # Convolve
+                        output_new = conv_new(
+                            x=input_matrices_dense,
+                            batching=(batch_size > 1),
+                        ).toarray()
+                        time_taken_new = time.time() - start_time_old
+
+                        # # Test old implementation
+                        # start_time_old = time.time()
+                        # conv_old = Toeplitz_convolution2d(
+                        #     x_shape=shape[:2],
+                        #     k=kernel,
+                        #     mode='same',
+                        #     dtype=np.float32,
+                        # )
+
+                        # # Convolve
+                        # output_old = conv_new(
+                        #     x=input_matrices_dense,
+                        #     batching=(batch_size > 1),
+                        # ).toarray()
+                        # time_taken_old = time.time() - start_time_old
+
+                        # print(f'Old time taken: {time_taken_old:8.2f}s')
+                        print(f'New time taken: {time_taken_new:8.2f}s')
+                        print(f'Speedup: {time_taken_old / time_taken_new:8.2f}x')
+
+                        if TEST_ACCURACY:
+                            # Compute expected output using convolve2d for each batch
+                            blank_matrix = np.zeros(input_matrices_shape[1:])
+                            expected_output_shape = convolve2d(blank_matrix, kernel, mode=mode).shape
+                            expected_output = np.zeros((batch_size, *expected_output_shape))
+                            conv2d_start = time.time()
+                            for i in range(batch_size):
+                                # Apply convolution for each batch element
+                                expected_output[i] = convolve2d(input_matrices_dense[i], kernel, mode=mode)
+                            conv2d_time = time.time() - conv2d_start
+
+                            assert output_new.shape == expected_output.shape, (
+                                f"Output shape mismatch: {output_new.shape} vs {expected_output.shape}"
                             )
-                        print(
-                            # f'init_time:       {init_time:8.3f}s'
-                            f'\ntime taken:           {time_taken:8.3f}s'
-                            f'\nconv2d time:     {conv2d_time:8.3f}s')
-                        print(f'Speedup:         {conv2d_time / time_taken:8.3f}x')
-                    else:
-                        print(f'time taken:       {time_taken:8.2f}s')
+                            # Verify each batch's output
+                            for i in range(batch_size):
+                                assert np.allclose(output_new[i], expected_output[i], atol=1e-6), (
+                                    f"Output mismatch for batch index {i}:\n"
+                                    f"Input:\n{input_matrices_dense[i]}\n"
+                                    f"Kernel:\n{kernel}\n"
+                                    f"Expected:\n{expected_output[i]}\n"
+                                    f"Got:\n{output_new[i]}\n"
+                                )
+                            print(
+                                # f'init_time:       {init_time:8.3f}s'
+                                f'\ntime taken:           {time_taken_new:8.3f}s'
+                                f'\nconv2d time:     {conv2d_time:8.3f}s')
+                            print(f'Speedup:         {conv2d_time / time_taken_new:8.3f}x')
+                        else:
+                            print(f'time taken:       {time_taken_new:8.2f}s')
 
 if __name__ == '__main__':
     test_sparse_toeplitz()
