@@ -81,7 +81,8 @@ def test_sparse_toeplitz():
         # (1000,1000, 64, 64),
         # (1000,1000, 128, 128),
         # (1000,1000, 256, 256),
-        # (100,100, 2, 2),
+        (100,100, 2, 2),
+        (50,150, 5, 5),
         # (1000,1000, 1, 1),
         # (1000,1000, 2, 2),
         # (1000,1000, 3, 3),
@@ -129,7 +130,8 @@ def test_sparse_toeplitz():
 
     bs_tt = batch_sizes_to_try = [
         1, 
-        2, 
+        2,
+        10,
         # 100, 
         # 9999, 
         # 100000
@@ -139,7 +141,7 @@ def test_sparse_toeplitz():
         # 1.0,
         0.5,
         # 0.04,
-        # 0.01,
+        0.01,
         # 0.005,
         # 0.001,
         # 0.0001,
@@ -184,9 +186,9 @@ def test_sparse_toeplitz():
     # and then I can submit a PR
 
     modes = [
-        # 'full',
+        'full',
         'same',
-        # 'valid'
+        'valid'
         ]
 
     for batch_size in bs_tt:
@@ -222,7 +224,7 @@ def test_sparse_toeplitz():
                             conv_new = MinimalToeplitzConvolver(
                                 x_shape=shape[:2],
                                 k=kernel,
-                                mode='same',
+                                mode=mode,
                                 dtype=np.float32,
                             )
 
@@ -235,7 +237,7 @@ def test_sparse_toeplitz():
                             conv_new = MinimalToeplitzConvolver(
                                 x_shape=shape[:2],
                                 k=kernel,
-                                mode='same',
+                                mode=mode,
                                 dtype=np.float32,
                             )
 
@@ -251,7 +253,7 @@ def test_sparse_toeplitz():
                         # conv_old = Toeplitz_convolution2d(
                         #     x_shape=shape[:2],
                         #     k=kernel,
-                        #     mode='same',
+                        #     mode=mode,
                         #     dtype=np.float32,
                         # )
 
