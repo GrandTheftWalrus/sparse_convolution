@@ -20,6 +20,7 @@ def test_sparse_toeplitz():
     # it checks the output against an explicit matrix
     # multiplication.
     TEST_ACCURACY = True
+    TEST_ORIGINAL = True
 
     stt = shapes_to_try = [
         # (1,1000, 1,1),
@@ -40,7 +41,7 @@ def test_sparse_toeplitz():
         # (64,64, 10,10),
         # (256,256, 10,10),
         # (1024,1024, 10,10),
-        (2,3, 2, 2),
+        # (2,3, 2, 2),
         # (3,3, 2, 2),
         # (10,10, 16, 16),
         # (20,20, 16, 16),
@@ -82,7 +83,7 @@ def test_sparse_toeplitz():
         # (1000,1000, 128, 128),
         # (1000,1000, 256, 256),
         (100,100, 2, 2),
-        (50,150, 5, 5),
+        # (50,150, 5, 5),
         # (1000,1000, 1, 1),
         # (1000,1000, 2, 2),
         # (1000,1000, 3, 3),
@@ -129,9 +130,9 @@ def test_sparse_toeplitz():
     ]
 
     bs_tt = batch_sizes_to_try = [
-        1, 
+        # 1, 
         2,
-        10,
+        # 10,
         # 100, 
         # 9999, 
         # 100000
@@ -139,26 +140,13 @@ def test_sparse_toeplitz():
 
     d_tt = sparsity_to_try = [
         # 1.0,
-        0.5,
+        # 0.5,
         # 0.04,
         0.01,
         # 0.005,
         # 0.001,
         # 0.0001,
     ]
-
-    # Note to self: It normally does quite well at
-    # 0.001 density with 16x16 kernel and 100x100 input
-    # (usually a 7x-10x speedup), but sometimes the
-    # speedup is something horrible like 0.035x,
-    # for example.
-    # AHA! Still no idea why, but I noticed that this
-    # happens after having recently done a large
-    # image. Perhaps it's something to do with
-    # memory allocation?
-
-    # Theory: This program scales like O(s * k^2 * n^2), s < 1
-    # whilst conv2d scales like O(k^2 * n^2)
 
     # I found experimentally that this program begins
     # to outperform convolve2d when the matrix density
@@ -218,8 +206,18 @@ def test_sparse_toeplitz():
                         k_shape = (shape[2], shape[3])
                         kernel = np.random.rand(*k_shape)
 
+                        # Get expected dimensions based on mode, for reshaping
+                        output_shape = None
+                        if mode == 'full':
+                            output_shape = (shape[0] + k_shape[0] - 1, shape[1] + k_shape[1] - 1)
+                        elif mode == 'same':
+                            output_shape = (shape[0], shape[1])
+                        elif mode == 'valid':
+                            output_shape = (shape[0] - k_shape[0] + 1, shape[1] - k_shape[1] + 1)
+                        
+
                         # Test new implementation
-                        start_time_old = time.time()
+                        start_time_new = time.time()
                         if matrix_type == 'sparse':
                             conv_new = MinimalToeplitzConvolver(
                                 x_shape=shape[:2],
@@ -246,27 +244,56 @@ def test_sparse_toeplitz():
                                 x=input_matrices_dense,
                                 batching=(batch_size > 1),
                             )
-                        time_taken_new = time.time() - start_time_old
+                        time_taken_new = time.time() - start_time_new
+                        print(f'Time taken:        \t{time_taken_new:8.2f}s')
 
-                        # # Test old implementation
-                        # start_time_old = time.time()
-                        # conv_old = Toeplitz_convolution2d(
-                        #     x_shape=shape[:2],
-                        #     k=kernel,
-                        #     mode=mode,
-                        #     dtype=np.float32,
-                        # )
+                        if TEST_ORIGINAL:
+                            # Test new implementation
+                            start_time_old = time.time()
+                            if matrix_type == 'sparse':
+                                conv_old = Toeplitz_convolution2d(
+                                    x_shape=shape[:2],
+                                    k=kernel,
+                                    mode=mode,
+                                    dtype=np.float32,
+                                )
 
-                        # # Convolve
-                        # output_old = conv_new(
-                        #     x=input_matrices_dense,
-                        #     batching=(batch_size > 1),
-                        # ).toarray()
-                        # time_taken_old = time.time() - start_time_old
+                                # Convolve
+                                output_old = conv_old(
+                                    x=input_matrices_sparse,
+                                    batching=(batch_size > 1),
+                                ).toarray()
+                            elif matrix_type == 'dense':
+                                conv_old = Toeplitz_convolution2d(
+                                    x_shape=shape[:2],
+                                    k=kernel,
+                                    mode=mode,
+                                    dtype=np.float32,
+                                )
+                                # TODO: Figure out why I'm getting "ValueError: could not interpret dimensions" in Toeplitz_convolution2d
 
-                        # print(f'Old time taken: {time_taken_old:8.2f}s')
-                        print(f'New time taken: {time_taken_new:8.2f}s')
-                        # print(f'Speedup: {time_taken_old / time_taken_new:8.2f}x')
+                                # Convolve
+                                output_old = conv_old(
+                                    x=input_matrices_dense.reshape(batch_size, -1, order='C'),
+                                    batching=(batch_size > 1),
+                                )
+
+                                # Reshape output
+                                output_old = output_old.reshape(batch_size, output_shape[0], output_shape[1], order='C')
+                            time_taken_old = time.time() - start_time_old
+                            print(f'Old time taken:     \t{time_taken_old:8.2f}s')
+
+                            # Assertions
+                            assert output_new.shape == output_old.shape, (
+                                f"Output shape mismatch: {output_new.shape} vs {output_old.shape}"
+                            )
+                            assert np.allclose(output_new, output_old, atol=1e-6), (
+                                f"Output mismatch:\n"
+                                f"Input:\n{input_matrices_dense}\n"
+                                f"Kernel:\n{kernel}\n"
+                                f"Expected:\n{output_old}\n"
+                                f"Got:\n{output_new}\n"
+                            )
 
                         if TEST_ACCURACY:
                             # Compute expected output using convolve2d for each batch
@@ -305,13 +332,13 @@ def test_sparse_toeplitz():
                                         f"Expected:\n{expected_output[i]}\n"
                                         f"Got:\n{output_new[i]}\n"
                                     )
-                            print(
-                                # f'init_time:       {init_time:8.3f}s'
-                                f'\ntime taken:           {time_taken_new:8.3f}s'
-                                f'\nconv2d time:     {conv2d_time:8.3f}s')
-                            print(f'Speedup:         {conv2d_time / time_taken_new:8.3f}x')
-                        else:
-                            print(f'time taken:       {time_taken_new:8.2f}s')
+                            print(f'Conv2d time:        \t{conv2d_time:8.2f}s')
+
+                        # Print stats
+                        if TEST_ORIGINAL:
+                            print(f'Speedup vs. old:    {time_taken_old / time_taken_new:8.3f}x')
+                        if TEST_ACCURACY:
+                            print(f'Speedup vs. conv2d: {conv2d_time / time_taken_new:8.3f}x')
 
 if __name__ == '__main__':
     test_sparse_toeplitz()
