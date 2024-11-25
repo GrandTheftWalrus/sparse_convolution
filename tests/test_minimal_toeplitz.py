@@ -2,9 +2,8 @@ import numpy as np
 import scipy
 import scipy.sparse
 import time
-import gc
-from sparse_convolution.minimal_toeplitz import MinimalToeplitzConvolver
-from sparse_convolution.sparse_convolution import Toeplitz_convolution2d
+from sparse_convolution.old_version import Toeplitz_convolution2d_Old
+from sparse_convolution.sparse_convolution import Toeplitz_convolution2d as Toeplitz_convolution2d_New_Version
 from scipy.signal import convolve2d
 from typing import Dict
 
@@ -22,7 +21,7 @@ def test_sparse_toeplitz():
     # it checks the output against an explicit matrix
     # multiplication.
     TEST_AGAINST_CONV2D = True
-    TEST_AGAINST_ORIGINAL = True
+    TEST_AGAINST_OLD_VERSION = True
     WRITE_RESULTS = False
 
     stt = shapes_to_try = [
@@ -177,7 +176,7 @@ def test_sparse_toeplitz():
     ]
 
     # Make a statistics matrix with one dimension for each test with more than one value
-    num_methods = 1 + TEST_AGAINST_ORIGINAL + TEST_AGAINST_CONV2D
+    num_methods = 1 + TEST_AGAINST_OLD_VERSION + TEST_AGAINST_CONV2D
     num_tests = len(bs_tt) * len(d_tt) * len(stt) * len(mt_tt) * len(modes) * len(dtypes_tt)
     test_results = np.zeros((num_methods, len(bs_tt), len(d_tt), len(stt), len(mt_tt))) # excluding mode
 
@@ -227,7 +226,7 @@ def test_sparse_toeplitz():
 
                             # Test new implementation
                             input_matrices = input_matrices_sparse if matrix_type == 'sparse' else input_matrices_dense
-                            stats_new = test_implementation(MinimalToeplitzConvolver, input_matrices, shape, kernel, mode, matrix_type, batch_size, dtype)
+                            stats_new = test_implementation(Toeplitz_convolution2d_New_Version, input_matrices, shape, kernel, mode, matrix_type, batch_size, dtype)
                             output_new = stats_new['output']
                             raw_output_new = stats_new['raw_output']
                             time_taken_new = stats_new['time_taken']
@@ -235,9 +234,9 @@ def test_sparse_toeplitz():
                             test_results[0, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type)] = time_taken_new
 
                             # Test old implementation
-                            if TEST_AGAINST_ORIGINAL:
+                            if TEST_AGAINST_OLD_VERSION:
                                 input_matrices = input_matrices_sparse if matrix_type == 'sparse' else input_matrices_dense
-                                stats_old = test_implementation(Toeplitz_convolution2d, input_matrices, shape, kernel, mode, matrix_type, batch_size, dtype)
+                                stats_old = test_implementation(Toeplitz_convolution2d_Old, input_matrices, shape, kernel, mode, matrix_type, batch_size, dtype)
                                 output_old = stats_old['output']
                                 raw_output_old = stats_old['raw_output']
                                 time_taken_old = stats_old['time_taken']
@@ -312,7 +311,7 @@ def test_sparse_toeplitz():
                                         )
                                 print(f'Conv2d time:        \t{conv2d_time:15.2f}s')
                                 print(f'Speedup vs. conv2d: {conv2d_time / time_taken_new:8.2f}x')
-                                test_index = 2 if TEST_AGAINST_ORIGINAL else 1
+                                test_index = 2 if TEST_AGAINST_OLD_VERSION else 1
                                 test_results[test_index, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type)] = conv2d_time
     total_time_taken = time.time() - total_time_start
     print(f'Total time taken: {total_time_taken:.2f}s')
@@ -320,7 +319,7 @@ def test_sparse_toeplitz():
     if WRITE_RESULTS:
         # Write the stats as a CSV, with column names
         methods = ['updated']
-        if TEST_AGAINST_ORIGINAL:
+        if TEST_AGAINST_OLD_VERSION:
             methods.append('original')
         if TEST_AGAINST_CONV2D:
             methods.append('conv2d')
