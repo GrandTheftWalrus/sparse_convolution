@@ -5,6 +5,7 @@ import time
 from sparse_convolution.minimal_toeplitz import MinimalToeplitzConvolver
 from sparse_convolution.sparse_convolution import Toeplitz_convolution2d
 from scipy.signal import convolve2d
+from typing import List
 
 def test_sparse_toeplitz():
     """
@@ -126,7 +127,7 @@ def test_sparse_toeplitz():
 
     mt_tt = matrix_types_to_try = [
         'dense',
-        # 'sparse',
+        'sparse',
     ]
 
     bs_tt = batch_sizes_to_try = [
@@ -229,10 +230,22 @@ def test_sparse_toeplitz():
                             )
 
                             # Convolve
-                            output_new = conv_new(
+                            raw_output_new = conv_new(
                                 x=input_matrices_sparse,
                                 batching=(batch_size > 1),
-                            ).toarray()
+                            )
+
+                            time_taken_new = time.time() - start_time_new
+
+                            # Reshape output
+                            raw_output_shape_new = raw_output_new.shape
+                            raw_output_new = raw_output_new.toarray()
+                            if batch_size == 1:
+                                output_new = raw_output_new.copy().reshape(output_shape[0], output_shape[1], order='C')
+                            else:
+                                print(raw_output_new.shape)
+                                print((batch_size, output_shape[0], output_shape[1]))
+                                output_new = raw_output_new.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
                         elif matrix_type == 'dense':
                             conv_new = MinimalToeplitzConvolver(
                                 x_shape=shape[:2],
@@ -247,14 +260,15 @@ def test_sparse_toeplitz():
                                 batching=(batch_size > 1),
                             )
 
+                            time_taken_new = time.time() - start_time_new
+
                             # Reshape output
                             raw_output_shape_new = raw_output_new.shape
                             if batch_size == 1:
                                 output_new = raw_output_new.copy().reshape(output_shape[0], output_shape[1], order='C')
                             else:
                                 output_new = raw_output_new.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
-                            
-                        time_taken_new = time.time() - start_time_new
+                        
                         print(f'Time taken:        \t{time_taken_new:8.2f}s')
 
                         if TEST_AGAINST_ORIGINAL:
@@ -263,7 +277,7 @@ def test_sparse_toeplitz():
                             # Test old implementation
                             start_time_old = time.time()
                             if matrix_type == 'sparse':
-                                conv_old = Toeplitz_convolution2d(
+                                conv_old = MinimalToeplitzConvolver(
                                     x_shape=shape[:2],
                                     k=kernel,
                                     mode=mode,
@@ -271,10 +285,20 @@ def test_sparse_toeplitz():
                                 )
 
                                 # Convolve
-                                output_old = conv_old(
+                                raw_output_old = conv_old(
                                     x=input_matrices_sparse,
                                     batching=(batch_size > 1),
-                                ).toarray()
+                                )
+
+                                time_taken_old = time.time() - start_time_old
+
+                                # Reshape output
+                                raw_output_shape_old = raw_output_old.shape
+                                raw_output_old = raw_output_old.toarray()
+                                if batch_size == 1:
+                                    output_old = raw_output_old.copy().reshape(output_shape[0], output_shape[1], order='C')
+                                else:
+                                    output_old = raw_output_old.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
                             elif matrix_type == 'dense':
                                 conv_old = Toeplitz_convolution2d(
                                     x_shape=shape[:2],
@@ -289,16 +313,18 @@ def test_sparse_toeplitz():
                                     batching=(batch_size > 1),
                                 )
 
+                                time_taken_old = time.time() - start_time_old
+
                                 # Reshape output
                                 raw_output_shape_old = raw_output_old.shape
                                 if batch_size == 1:
                                     output_old = raw_output_old.copy().reshape(output_shape[0], output_shape[1], order='C')
                                 else:
                                     output_old = raw_output_old.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
-                            time_taken_old = time.time() - start_time_old
+                            
                             print(f'Old time taken:     \t{time_taken_old:8.2f}s')
 
-                            # Assertions
+                            # Verify outputs
                             assert raw_output_shape_new == raw_output_shape_old, (
                                 f"Raw output shape mismatch: {raw_output_shape_new} vs {raw_output_shape_old}"
                             )
@@ -364,6 +390,71 @@ def test_sparse_toeplitz():
                             print(f'Speedup vs. old:    {time_taken_old / time_taken_new:8.3f}x')
                         if TEST_AGAINST_CONV2D:
                             print(f'Speedup vs. conv2d: {conv2d_time / time_taken_new:8.3f}x')
+
+def test_implementation(conv_function, x, shape, kernel, mode, matrix_type, batch_size) -> List:
+    # Get expected dimensions based on mode, for reshaping
+    output_shape = None
+    if mode == 'full':
+        output_shape = (shape[0] + kernel.shape[0] - 1, shape[1] + kernel.shape[1] - 1)
+    elif mode == 'same':
+        output_shape = (shape[0], shape[1])
+    elif mode == 'valid':
+        output_shape = (shape[0] - kernel.shape[0] + 1, shape[1] - kernel.shape[1] + 1)
+    
+
+    # Test implementation
+    start_time = time.time()
+    raw_output = None
+    if matrix_type == 'sparse':
+        conv = conv_function(
+            x_shape=shape[:2],
+            k=kernel,
+            mode=mode,
+            dtype=np.float32,
+        )
+
+        # Convolve
+        raw_output = conv(
+            x=x,
+            batching=(batch_size > 1),
+        )
+
+        time_taken = time.time() - start_time
+
+        # Reshape output
+        raw_output = raw_output.toarray()
+        if batch_size == 1:
+            output = raw_output.copy().reshape(output_shape[0], output_shape[1], order='C')
+        else:
+            print(raw_output.shape)
+            print((batch_size, output_shape[0], output_shape[1]))
+            output = raw_output.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
+    elif matrix_type == 'dense':
+        conv = conv_function(
+            x_shape=shape[:2],
+            k=kernel,
+            mode=mode,
+            dtype=np.float32,
+        )
+
+        # Convolve
+        raw_output = conv(
+            x=x.reshape(batch_size, -1, order='C'),
+            batching=(batch_size > 1),
+        )
+
+        time_taken = time.time() - start_time
+
+        # Reshape output
+        if batch_size == 1:
+            output = raw_output.copy().reshape(output_shape[0], output_shape[1], order='C')
+        else:
+            output = raw_output.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
+    
+    print(f'Time taken ({conv_function.__name__}):\t{time_taken:8.2f}s')
+
+    return [output, raw_output, time_taken]
+
 
 if __name__ == '__main__':
     test_sparse_toeplitz()

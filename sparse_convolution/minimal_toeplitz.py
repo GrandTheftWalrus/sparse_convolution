@@ -50,6 +50,8 @@ class MinimalToeplitzConvolver():
         Perform a convolution operation between the input matrix and the kernel.
         """
         is_sparse = scipy.sparse.issparse(x)
+        if is_sparse:
+            x = x.tocsr()
         if batching:
             batch_size = x.shape[0]
         else:
@@ -64,7 +66,10 @@ class MinimalToeplitzConvolver():
         # TODO: Make sure this works with both dense and sparse matrices, with and without batching
 
         # Get the indices of empty rows of B
-        nonzero_B_rows = np.where(B.any(axis=1))[0]
+        if is_sparse:
+            nonzero_B_rows = B.getnnz(axis=1).nonzero()[0]
+        else:
+            nonzero_B_rows = np.where(B.any(axis=1))[0]
 
         # Form the bare minimum double Toeplitz matrix
         cols = nonzero_B_rows
