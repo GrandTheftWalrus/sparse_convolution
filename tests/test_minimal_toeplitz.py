@@ -41,7 +41,7 @@ def test_sparse_toeplitz():
         # (64,64, 10,10),
         # (256,256, 10,10),
         # (1024,1024, 10,10),
-        # (2,3, 2, 2),
+        (2,3, 2, 2),
         # (3,3, 2, 2),
         # (10,10, 16, 16),
         # (20,20, 16, 16),
@@ -82,7 +82,7 @@ def test_sparse_toeplitz():
         # (1000,1000, 64, 64),
         # (1000,1000, 128, 128),
         # (1000,1000, 256, 256),
-        (100,100, 2, 2),
+        # (100,100, 2, 2),
         # (50,150, 5, 5),
         # (1000,1000, 1, 1),
         # (1000,1000, 2, 2),
@@ -140,9 +140,9 @@ def test_sparse_toeplitz():
 
     d_tt = sparsity_to_try = [
         # 1.0,
-        # 0.5,
+        0.5,
         # 0.04,
-        0.01,
+        # 0.01,
         # 0.005,
         # 0.001,
         # 0.0001,
@@ -218,6 +218,8 @@ def test_sparse_toeplitz():
 
                         # Test new implementation
                         start_time_new = time.time()
+                        raw_output_shape_new = None
+                        raw_output_new = None
                         if matrix_type == 'sparse':
                             conv_new = MinimalToeplitzConvolver(
                                 x_shape=shape[:2],
@@ -240,15 +242,23 @@ def test_sparse_toeplitz():
                             )
 
                             # Convolve
-                            output_new = conv_new(
-                                x=input_matrices_dense,
+                            raw_output_new = conv_new(
+                                x=input_matrices_dense.reshape(batch_size, -1, order='C'),
                                 batching=(batch_size > 1),
                             )
+
+                            # Reshape output
+                            raw_output_shape_new = raw_output_new.shape
+                            output_new = raw_output_new.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
                         time_taken_new = time.time() - start_time_new
+                        # TODO: Get MinimalToeplitzConvolver to take dense output in the same format as Toeplitz_convolution2d,
+                        # and return it in the same format too (un-reshaped)
                         print(f'Time taken:        \t{time_taken_new:8.2f}s')
 
                         if TEST_ORIGINAL:
-                            # Test new implementation
+                            raw_output_shape_old = None
+                            raw_output_old = None
+                            # Test old implementation
                             start_time_old = time.time()
                             if matrix_type == 'sparse':
                                 conv_old = Toeplitz_convolution2d(
@@ -270,22 +280,32 @@ def test_sparse_toeplitz():
                                     mode=mode,
                                     dtype=np.float32,
                                 )
-                                # TODO: Figure out why I'm getting "ValueError: could not interpret dimensions" in Toeplitz_convolution2d
 
                                 # Convolve
-                                output_old = conv_old(
+                                raw_output_old = conv_old(
                                     x=input_matrices_dense.reshape(batch_size, -1, order='C'),
                                     batching=(batch_size > 1),
                                 )
 
                                 # Reshape output
-                                output_old = output_old.reshape(batch_size, output_shape[0], output_shape[1], order='C')
+                                raw_output_shape_old = raw_output_old.shape
+                                output_old = raw_output_old.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
                             time_taken_old = time.time() - start_time_old
                             print(f'Old time taken:     \t{time_taken_old:8.2f}s')
 
                             # Assertions
+                            assert raw_output_shape_new == raw_output_shape_old, (
+                                f"Raw output shape mismatch: {raw_output_shape_new} vs {raw_output_shape_old}"
+                            )
                             assert output_new.shape == output_old.shape, (
-                                f"Output shape mismatch: {output_new.shape} vs {output_old.shape}"
+                                f"Reshaped output shape mismatch: {output_new.shape} vs {output_old.shape}"
+                            )
+                            assert np.allclose(raw_output_new, raw_output_old, atol=1e-6), (
+                                f"Raw output mismatch:\n"
+                                f"Input:\n{input_matrices_dense}\n"
+                                f"Kernel:\n{kernel}\n"
+                                f"Expected:\n{raw_output_old}\n"
+                                f"Got:\n{raw_output_new}\n"
                             )
                             assert np.allclose(output_new, output_old, atol=1e-6), (
                                 f"Output mismatch:\n"
