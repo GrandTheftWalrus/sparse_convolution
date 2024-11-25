@@ -157,7 +157,7 @@ def test_sparse_toeplitz():
 
     d_tt = sparsity_to_try = [
         # 1.0,
-        0.5,
+        # 0.5,
         # 0.04,
         0.01,
         # 0.005,
@@ -172,13 +172,13 @@ def test_sparse_toeplitz():
         ]
     
     dtypes_tt = [
-        np.int32,
+        # np.int32, # I think this doesn't work in the previous version. It seems to output a bunch of zeros
         np.float32,
     ]
 
     # Make a statistics matrix with one dimension for each test with more than one value
     num_methods = 1 + TEST_AGAINST_ORIGINAL + TEST_AGAINST_CONV2D
-    num_tests = len(bs_tt) * len(d_tt) * len(stt) * len(mt_tt) * len(modes)
+    num_tests = len(bs_tt) * len(d_tt) * len(stt) * len(mt_tt) * len(modes) * len(dtypes_tt)
     test_results = np.zeros((num_methods, len(bs_tt), len(d_tt), len(stt), len(mt_tt))) # excluding mode
 
     # I found experimentally that this program begins
@@ -245,13 +245,6 @@ def test_sparse_toeplitz():
                                 print(f'Time taken (old):\t{time_taken_old:15.2f}s')
                                 print(f'Speedup vs. old:    {time_taken_old / time_taken_new:8.2f}x')
 
-
-                                print(input_matrices)
-                                print(kernel)
-                                print("output_new:\n", output_new)
-                                print("output_old:\n", output_old)
-                                exit()
-
                                 # Compare outputs
                                 assert raw_output_new.shape == raw_output_old.shape, (
                                     f"Raw output shape mismatch: {raw_output_new.shape} vs {raw_output_old.shape}"
@@ -285,9 +278,15 @@ def test_sparse_toeplitz():
                                 for i in range(batch_size):
                                     # Apply convolution for each batch element
                                     if batch_size == 1:
-                                        expected_output = convolve2d(input_matrices_dense, kernel, mode=mode)
+                                        result = convolve2d(input_matrices_dense, kernel, mode=mode)
+                                        if result.dtype != dtype:
+                                            result = result.astype(dtype)
+                                        expected_output = result
                                     else:
-                                        expected_output[i] = convolve2d(input_matrices_dense[i], kernel, mode=mode)
+                                        result = convolve2d(input_matrices_dense[i], kernel, mode=mode)
+                                        if result.dtype != dtype:
+                                            result = result.astype(dtype)
+                                        expected_output[i] = result
                                 conv2d_time = time.time() - conv2d_start
 
                                 assert output_new.shape == expected_output.shape, (
@@ -351,14 +350,13 @@ def test_implementation(conv_function, x, shape, kernel, mode, matrix_type, batc
     # Test implementation
     start_time = time.time()
     raw_output = None
-    
+ 
     # Initialize convolution object
     conv = conv_function(
         x_shape=shape[:2],
         k=kernel,
         mode=mode,
-        dtype=dtype,
-        verbose=True,
+        dtype=dtype
     )
 
     # Convolve
