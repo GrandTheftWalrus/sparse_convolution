@@ -30,7 +30,7 @@ class MinimalToeplitzConvolver():
         k = np.flipud(k.copy())
         self.kernel: np.ndarray = k
         self.mode = mode
-        self.dtype = k.dtype if dtype is None else dtype # TODO: add dtype to the _get_values method or something so the output is the correct dtype
+        self.dtype = k.dtype if dtype is None else dtype
         self.verbose = verbose
 
         # Compute some tings
@@ -69,6 +69,20 @@ class MinimalToeplitzConvolver():
         else:
             nonzero_B_rows = np.where(B.any(axis=1))[0]
 
+        ## Warn if x_shape is large
+        density = len(nonzero_B_rows)/B.shape[0]
+        if self.verbose > 0:
+            n_nz_elements_expected = int(density * self.x_shape[0]*self.x_shape[1]*self.kernel.shape[0]*self.kernel.shape[1])
+            if n_nz_elements_expected >= 1e8:
+                print("Warning: The number of non-zero elements in the Toeplitz matrix is large. \n"
+                      f"(d * x_shape[0]*x_shape[1]*k.shape[0]*k.shape[1]) = {n_nz_elements_expected} non-zero elements, \n"
+                      f"where d is the effective density of the input matrix batch (d = {density}). \n"
+                      "This will likely be slow and have a large memory footprint. \n"
+                      "Consider breaking the `x` array into smaller chunks or tiles so that `x_shape` can be smaller and performing the convolution in batches.")
+            if density >= 0.05:
+                print(f"Warning: The density of the input matrix (or the effective density of the batch) is high: density = {density} >= 0.05\n"
+                      "Regular convolution methods may perform better in this case.")
+
         # Form the bare minimum double Toeplitz matrix
         cols = nonzero_B_rows
         rows = self._get_nonzero_rows(cols)
@@ -80,6 +94,10 @@ class MinimalToeplitzConvolver():
 
         # Do the roar
         out_uncropped = DT @ B
+
+        # Change dtype if necessary
+        if out_uncropped.dtype != self.dtype:
+            out_uncropped = out_uncropped.astype(self.dtype)
 
         # Unvectorize output
         so = size_output_array = ((self.x_shape[0] + self.kernel.shape[0] - 1), (self.kernel.shape[1] + self.x_shape[1] -1))
