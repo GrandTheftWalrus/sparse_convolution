@@ -62,8 +62,6 @@ class MinimalToeplitzConvolver():
         
         # Make B (the flattened and horizontally stacked input matrices)
         B = x.reshape(batch_size, -1).T
-        
-        # TODO: Make sure this works with both dense and sparse matrices, with and without batching
 
         # Get the indices of empty rows of B
         if is_sparse:

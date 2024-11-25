@@ -7,7 +7,6 @@ from sparse_convolution.minimal_toeplitz import MinimalToeplitzConvolver
 from sparse_convolution.sparse_convolution import Toeplitz_convolution2d
 from scipy.signal import convolve2d
 from typing import Dict
-import tracemalloc
 
 def test_sparse_toeplitz():
     """
@@ -24,7 +23,7 @@ def test_sparse_toeplitz():
     # multiplication.
     TEST_AGAINST_CONV2D = True
     TEST_AGAINST_ORIGINAL = True
-    WRITE_RESULTS = True
+    WRITE_RESULTS = False
 
     stt = shapes_to_try = [
         # (1,1000, 1,1),
@@ -89,6 +88,7 @@ def test_sparse_toeplitz():
         (100,100, 2, 2),
         (100,100, 10, 10),
         (50,150, 5, 5),
+        (100,1, 5, 1),
         # (1000,1000, 1, 1),
         # (1000,1000, 2, 2),
         # (1000,1000, 3, 3),
@@ -123,7 +123,7 @@ def test_sparse_toeplitz():
         # (5000,5000, 3, 3),
         # (6000,6000, 3, 3),
         # (7000,7000, 3, 3),
-        (8000,8000, 3, 3),
+        # (8000,8000, 3, 3),
         # (9000,9000, 3, 3),
         # (2000,2000, 3, 3),
         # (2000,2000, 3, 3),
@@ -142,7 +142,7 @@ def test_sparse_toeplitz():
     ]
 
     mt_tt = matrix_types_to_try = [
-        # 'dense',
+        'dense',
         'sparse',
     ]
 
@@ -158,10 +158,10 @@ def test_sparse_toeplitz():
     d_tt = sparsity_to_try = [
         # 1.0,
         # 0.5,
-        0.04,
+        # 0.04,
         0.01,
         # 0.005,
-        0.001,
+        # 0.001,
         0.0001,
     ]
 
@@ -174,7 +174,7 @@ def test_sparse_toeplitz():
     # Make a statistics matrix with one dimension for each test with more than one value
     num_methods = 1 + TEST_AGAINST_ORIGINAL + TEST_AGAINST_CONV2D
     num_tests = len(bs_tt) * len(d_tt) * len(stt) * len(mt_tt) * len(modes)
-    test_results = np.zeros((num_methods, len(bs_tt), len(d_tt), len(stt), len(mt_tt), 2)) # excluding mode. 2 for time and memory
+    test_results = np.zeros((num_methods, len(bs_tt), len(d_tt), len(stt), len(mt_tt))) # excluding mode
 
     # I found experimentally that this program begins
     # to outperform convolve2d when the matrix density
@@ -237,29 +237,18 @@ def test_sparse_toeplitz():
                         output_new = stats_new['output']
                         raw_output_new = stats_new['raw_output']
                         time_taken_new = stats_new['time_taken']
-                        memory_usage_new = stats_new['memory_used']
                         print(f'Time taken (new):\t{time_taken_new:15.2f}s')
-                        print(f'Memory used (new):\t{memory_usage_new:12d} B')
-                        test_results[0, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type), 0] = time_taken_new
-                        test_results[0, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type), 1] = memory_usage_new
-                        gc.collect()
+                        test_results[0, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type)] = time_taken_new
 
                         # Test old implementation
                         if TEST_AGAINST_ORIGINAL:
                             stats_old = test_implementation(Toeplitz_convolution2d, input_matrices, shape, kernel, mode, matrix_type, batch_size)
-                            gc.collect()
-                            if stats_old is None:
-                                test_results[1, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type)] = np.nan
                             output_old = stats_old['output']
                             raw_output_old = stats_old['raw_output']
                             time_taken_old = stats_old['time_taken']
-                            memory_usage_old = stats_old['memory_used']
-                            test_results[1, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type), 0] = time_taken_old
-                            test_results[1, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type), 1] = memory_usage_old
+                            test_results[1, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type)] = time_taken_old
                             print(f'Time taken (old):\t{time_taken_old:15.2f}s')
-                            print(f'Memory used (old):\t{memory_usage_old:12d} B')
                             print(f'Speedup vs. old:    {time_taken_old / time_taken_new:8.2f}x')
-                            print(f'Memory usage:       {100*memory_usage_new/memory_usage_old:8.2f}%')
 
                             # Compare outputs
                             assert raw_output_new.shape == raw_output_old.shape, (
@@ -289,8 +278,6 @@ def test_sparse_toeplitz():
                             expected_output_shape = convolve2d(blank_matrix, kernel, mode=mode).shape
                             expected_output = None
                             conv2d_start = time.time()
-                            tracemalloc.start()
-                            memory_before_conv2d = tracemalloc.get_traced_memory()
                             if batch_size > 1:
                                 expected_output = np.zeros((batch_size, *expected_output_shape))
                             for i in range(batch_size):
@@ -300,10 +287,6 @@ def test_sparse_toeplitz():
                                 else:
                                     expected_output[i] = convolve2d(input_matrices_dense[i], kernel, mode=mode)
                             conv2d_time = time.time() - conv2d_start
-                            memory_after_conv2d = tracemalloc.get_traced_memory()
-                            memory_used_conv2d = memory_after_conv2d[1] - memory_before_conv2d[1]
-                            tracemalloc.stop()
-                            gc.collect()
 
                             assert output_new.shape == expected_output.shape, (
                                 f"Output shape mismatch: {output_new.shape} vs {expected_output.shape}"
@@ -327,12 +310,9 @@ def test_sparse_toeplitz():
                                         f"Got:\n{output_new[i]}\n"
                                     )
                             print(f'Conv2d time:        \t{conv2d_time:15.2f}s')
-                            print(f'Memory used (conv2d):\t{memory_used_conv2d:12d} B')
                             print(f'Speedup vs. conv2d: {conv2d_time / time_taken_new:8.2f}x')
-                            print(f'Memory usage:  {100*memory_usage_new/memory_used_conv2d:8.2f}%')
                             test_index = 2 if TEST_AGAINST_ORIGINAL else 1
-                            test_results[test_index, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type), 0] = conv2d_time
-                            test_results[test_index, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type), 1] = memory_used_conv2d
+                            test_results[test_index, bs_tt.index(batch_size), d_tt.index(density), stt.index(shape), mt_tt.index(matrix_type)] = conv2d_time
     total_time_taken = time.time() - total_time_start
     print(f'Total time taken: {total_time_taken:.2f}s')
 
@@ -369,8 +349,6 @@ def test_implementation(conv_function, x, shape, kernel, mode, matrix_type, batc
     # Test implementation
     start_time = time.time()
     raw_output = None
-    tracemalloc.start()
-    memory_before = tracemalloc.get_traced_memory()
     
     # Initialize convolution object
     conv = conv_function(
@@ -395,15 +373,10 @@ def test_implementation(conv_function, x, shape, kernel, mode, matrix_type, batc
     else:
         reshaped_output = raw_output.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
 
-    memory_after = tracemalloc.get_traced_memory()
-    memory_used = memory_after[1] - memory_before[1]
-    tracemalloc.stop()
-
     return {
         'output': reshaped_output,
         'raw_output': raw_output,
         'time_taken': time_taken,
-        'memory_used': memory_used,
     }
 
 if __name__ == '__main__':
