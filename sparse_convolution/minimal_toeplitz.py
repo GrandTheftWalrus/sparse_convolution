@@ -11,16 +11,26 @@ class MinimalToeplitzConvolver():
         dtype: Optional[np.dtype] = None,
         verbose: Union[bool, int] = False,
     ):
-        assert k.shape[0] > 0 and k.shape[1] > 0, "Kernel must have width and height greater than zero"
-        assert x_shape[0] > 0 and x_shape[1] > 0, "Input matrix must have width and height greater than zero"
+        ## Type checking
+        assert isinstance(x_shape, (tuple, list)), f"x_shape must be a tuple. Found: {type(x_shape)}"
+        assert all([isinstance(s, (int, float, np.integer, np.floating)) for s in x_shape]), f"x_shape must be a tuple of integers. Found: {[type(s) for s in x_shape]}"
+        x_shape = (int(x_shape[0]), int(x_shape[1]))
+        assert isinstance(k, np.ndarray), "k must be a numpy array"
+        assert k.ndim == 2, "k must be a 2D array"
+        assert isinstance(mode, str), "mode must be a string"
+        assert mode in ['full', 'same', 'valid'], "mode must be 'full', 'same', or 'valid'"
         if mode == 'valid':
             assert x_shape[0] >= k.shape[0] and x_shape[1] >= k.shape[1], "x must be larger than k in both dimensions for mode='valid'"
+
+        # New assertions
+        assert k.shape[0] > 0 and k.shape[1] > 0, "Kernel must have width and height greater than zero"
+        assert x_shape[0] > 0 and x_shape[1] > 0, "Input matrix must have width and height greater than zero"
         # TODO: Figure out whether to throw an assertion error when the kernel type and dtype are different. Depends what the original implementation does.
 
         self.x_shape: Tuple[int, int] = x_shape
         self.kernel: np.ndarray = k
         self.mode = mode
-        self.dtype = dtype
+        self.dtype = k.dtype if dtype is None else dtype # TODO: add dtype to the _get_values method or something so the output is the correct dtype
         self.verbose = verbose
 
         # Compute some tings
@@ -54,19 +64,18 @@ class MinimalToeplitzConvolver():
             # This is the case that it's in the shape (x_shape[0], x_shape[1])
             # Add a dimension
             x = x[np.newaxis, ...]
-            B = np.flip(x, axis=1).reshape(batch_size, -1).T
-        else:
-            # This is the case that it's in the shape (batch_size, x_shape[0] * x_shape[1]), which
-            # is the input expected by the original implementation. For some reason
-            # when I made the minimal toeplitz implementation, the instructions that I followed
-            # for convolution-via-Toeplitz expected the input to be in a different shape. I think
-            # it might be because they reshaped the input in a strange way instead of just flipping
-            # the kernel.
-            # Flipping and reshaping numpy arrays are not expensive operations, so I hear,
-            # so I don't think it's a big deal for performance. Might be worth making the code
-            # more readable though.
-            B = np.flip(x.reshape(batch_size, self.x_shape[0], self.x_shape[1]), axis=1)
-            B = B.reshape(batch_size, -1).T
+        
+        # NOTE: This is the case that it's in the shape (batch_size, x_shape[0] * x_shape[1]), which
+        # is the input expected by the original implementation. For some reason
+        # when I made the minimal toeplitz implementation, the instructions that I followed
+        # for convolution-via-Toeplitz expected the input to be in a different shape. I think
+        # it might be because they reshaped the input in a strange way instead of just flipping
+        # the kernel.
+        # Flipping and reshaping numpy arrays are not expensive operations, so I hear,
+        # so I don't think it's a big deal for performance. Might be worth making the code
+        # more readable though.
+        B = np.flip(x.reshape(batch_size, self.x_shape[0], self.x_shape[1]), axis=1)
+        B = B.reshape(batch_size, -1).T
         # TODO: Make sure this works with both dense and sparse matrices, with and without batching
 
         # Get the indices of empty rows of B
@@ -124,7 +133,7 @@ class MinimalToeplitzConvolver():
                 out = out_uncropped.reshape(so).tocsc()[t:b, l:r]
             else:
                 out = out_uncropped.reshape(so)[t:b, l:r]  ## reshape back into 2D array and crop
-
+        
         return out
     
     def _get_values(self, row_matrix: np.ndarray, col_vector: np.ndarray) -> np.ndarray:

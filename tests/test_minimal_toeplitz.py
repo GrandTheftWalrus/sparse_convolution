@@ -82,8 +82,8 @@ def test_sparse_toeplitz():
         # (1000,1000, 64, 64),
         # (1000,1000, 128, 128),
         # (1000,1000, 256, 256),
-        # (100,100, 2, 2),
-        # (50,150, 5, 5),
+        (100,100, 2, 2),
+        (50,150, 5, 5),
         # (1000,1000, 1, 1),
         # (1000,1000, 2, 2),
         # (1000,1000, 3, 3),
@@ -130,9 +130,9 @@ def test_sparse_toeplitz():
     ]
 
     bs_tt = batch_sizes_to_try = [
-        # 1, 
+        1, 
         2,
-        # 10,
+        10,
         # 100, 
         # 9999, 
         # 100000
@@ -142,7 +142,7 @@ def test_sparse_toeplitz():
         # 1.0,
         0.5,
         # 0.04,
-        # 0.01,
+        0.01,
         # 0.005,
         # 0.001,
         # 0.0001,
@@ -249,7 +249,11 @@ def test_sparse_toeplitz():
 
                             # Reshape output
                             raw_output_shape_new = raw_output_new.shape
-                            output_new = raw_output_new.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
+                            if batch_size == 1:
+                                output_new = raw_output_new.copy().reshape(output_shape[0], output_shape[1], order='C')
+                            else:
+                                output_new = raw_output_new.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
+                            
                         time_taken_new = time.time() - start_time_new
                         # TODO: Get MinimalToeplitzConvolver to take dense output in the same format as Toeplitz_convolution2d,
                         # and return it in the same format too (un-reshaped)
@@ -289,7 +293,10 @@ def test_sparse_toeplitz():
 
                                 # Reshape output
                                 raw_output_shape_old = raw_output_old.shape
-                                output_old = raw_output_old.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
+                                if batch_size == 1:
+                                    output_old = raw_output_old.copy().reshape(output_shape[0], output_shape[1], order='C')
+                                else:
+                                    output_old = raw_output_old.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
                             time_taken_old = time.time() - start_time_old
                             print(f'Old time taken:     \t{time_taken_old:8.2f}s')
 
