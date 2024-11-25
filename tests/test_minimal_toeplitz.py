@@ -226,7 +226,7 @@ def test_sparse_toeplitz():
 
                             # Test new implementation
                             input_matrices = input_matrices_sparse if matrix_type == 'sparse' else input_matrices_dense
-                            stats_new = test_implementation(Toeplitz_convolution2d_New_Version, input_matrices, shape, kernel, mode, matrix_type, batch_size, dtype)
+                            stats_new = _test_implementation(Toeplitz_convolution2d_New_Version, input_matrices, shape, kernel, mode, matrix_type, batch_size, dtype)
                             output_new = stats_new['output']
                             raw_output_new = stats_new['raw_output']
                             time_taken_new = stats_new['time_taken']
@@ -236,7 +236,7 @@ def test_sparse_toeplitz():
                             # Test old implementation
                             if TEST_AGAINST_OLD_VERSION:
                                 input_matrices = input_matrices_sparse if matrix_type == 'sparse' else input_matrices_dense
-                                stats_old = test_implementation(Toeplitz_convolution2d_Old, input_matrices, shape, kernel, mode, matrix_type, batch_size, dtype)
+                                stats_old = _test_implementation(Toeplitz_convolution2d_Old, input_matrices, shape, kernel, mode, matrix_type, batch_size, dtype)
                                 output_old = stats_old['output']
                                 raw_output_old = stats_old['raw_output']
                                 time_taken_old = stats_old['time_taken']
@@ -335,7 +335,7 @@ def test_sparse_toeplitz():
                                 s = f'{s[0]}x{s[1]}_{s[2]}x{s[3]}'
                                 f.write(f'{methods[method]},{bs},{d},{s},{mt},{time_taken:.4f},{memory_used:.0f}\n')
 
-def test_implementation(conv_function, x, shape, kernel, mode, matrix_type, batch_size, dtype) -> Dict:
+def _test_implementation(conv_function, x, shape, kernel, mode, matrix_type, batch_size, dtype) -> Dict:
     # Get expected dimensions based on mode, for reshaping
     output_shape = None
     if mode == 'full':
