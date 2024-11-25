@@ -19,8 +19,8 @@ def test_sparse_toeplitz():
     # Warning: Testing the accuracy scales horribly because
     # it checks the output against an explicit matrix
     # multiplication.
-    TEST_ACCURACY = True
-    TEST_ORIGINAL = True
+    TEST_AGAINST_CONV2D = True
+    TEST_AGAINST_ORIGINAL = True
 
     stt = shapes_to_try = [
         # (1,1000, 1,1),
@@ -255,11 +255,9 @@ def test_sparse_toeplitz():
                                 output_new = raw_output_new.copy().reshape(batch_size, output_shape[0], output_shape[1], order='C')
                             
                         time_taken_new = time.time() - start_time_new
-                        # TODO: Get MinimalToeplitzConvolver to take dense output in the same format as Toeplitz_convolution2d,
-                        # and return it in the same format too (un-reshaped)
                         print(f'Time taken:        \t{time_taken_new:8.2f}s')
 
-                        if TEST_ORIGINAL:
+                        if TEST_AGAINST_ORIGINAL:
                             raw_output_shape_old = None
                             raw_output_old = None
                             # Test old implementation
@@ -322,7 +320,7 @@ def test_sparse_toeplitz():
                                 f"Got:\n{output_new}\n"
                             )
 
-                        if TEST_ACCURACY:
+                        if TEST_AGAINST_CONV2D:
                             # Compute expected output using convolve2d for each batch
                             blank_matrix = np.zeros(shape[:2])
                             expected_output_shape = convolve2d(blank_matrix, kernel, mode=mode).shape
@@ -362,9 +360,9 @@ def test_sparse_toeplitz():
                             print(f'Conv2d time:        \t{conv2d_time:8.2f}s')
 
                         # Print stats
-                        if TEST_ORIGINAL:
+                        if TEST_AGAINST_ORIGINAL:
                             print(f'Speedup vs. old:    {time_taken_old / time_taken_new:8.3f}x')
-                        if TEST_ACCURACY:
+                        if TEST_AGAINST_CONV2D:
                             print(f'Speedup vs. conv2d: {conv2d_time / time_taken_new:8.3f}x')
 
 if __name__ == '__main__':

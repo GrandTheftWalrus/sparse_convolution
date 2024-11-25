@@ -25,9 +25,9 @@ class MinimalToeplitzConvolver():
         # New assertions
         assert k.shape[0] > 0 and k.shape[1] > 0, "Kernel must have width and height greater than zero"
         assert x_shape[0] > 0 and x_shape[1] > 0, "Input matrix must have width and height greater than zero"
-        # TODO: Figure out whether to throw an assertion error when the kernel type and dtype are different. Depends what the original implementation does.
 
         self.x_shape: Tuple[int, int] = x_shape
+        k = np.flipud(k.copy())
         self.kernel: np.ndarray = k
         self.mode = mode
         self.dtype = k.dtype if dtype is None else dtype # TODO: add dtype to the _get_values method or something so the output is the correct dtype
@@ -57,25 +57,10 @@ class MinimalToeplitzConvolver():
         
         if mode is None:
             mode = self.mode  ## use the mode that was set in the init if not specified
-
-        # Make B (the flattened and horizontally stacked input matrices)
-        B = None
-        if batch_size == 1:
-            # This is the case that it's in the shape (x_shape[0], x_shape[1])
-            # Add a dimension
-            x = x[np.newaxis, ...]
         
-        # NOTE: This is the case that it's in the shape (batch_size, x_shape[0] * x_shape[1]), which
-        # is the input expected by the original implementation. For some reason
-        # when I made the minimal toeplitz implementation, the instructions that I followed
-        # for convolution-via-Toeplitz expected the input to be in a different shape. I think
-        # it might be because they reshaped the input in a strange way instead of just flipping
-        # the kernel.
-        # Flipping and reshaping numpy arrays are not expensive operations, so I hear,
-        # so I don't think it's a big deal for performance. Might be worth making the code
-        # more readable though.
-        B = np.flip(x.reshape(batch_size, self.x_shape[0], self.x_shape[1]), axis=1)
-        B = B.reshape(batch_size, -1).T
+        # Make B (the flattened and horizontally stacked input matrices)
+        B = x.reshape(batch_size, -1).T
+        
         # TODO: Make sure this works with both dense and sparse matrices, with and without batching
 
         # Get the indices of empty rows of B
@@ -96,8 +81,6 @@ class MinimalToeplitzConvolver():
         # Unvectorize output
         so = size_output_array = ((self.x_shape[0] + self.kernel.shape[0] - 1), (self.kernel.shape[1] + self.x_shape[1] -1))
         # Reconcile it with the original implementation's output shape
-        out_uncropped = np.flip(out_uncropped.T.reshape(batch_size, so[0], so[1]), axis=1)
-        out_uncropped = out_uncropped.reshape(batch_size, -1)
 
         # Crop the output to the correct size
         if mode == 'full':
@@ -122,18 +105,16 @@ class MinimalToeplitzConvolver():
             b = self.x_shape[0]+1 if b==0 else b
             r = self.x_shape[1]+1 if r==0 else r
 
-        out = None
         if batching:
             idx_crop = np.zeros(so, dtype=np.bool_)
             idx_crop[t:b, l:r] = True
             idx_crop = idx_crop.reshape(-1)
-            out = out_uncropped[:, idx_crop]
+            out = out_uncropped[idx_crop,:].T
         else:
             if is_sparse:
                 out = out_uncropped.reshape(so).tocsc()[t:b, l:r]
             else:
                 out = out_uncropped.reshape(so)[t:b, l:r]  ## reshape back into 2D array and crop
-        
         return out
     
     def _get_values(self, row_matrix: np.ndarray, col_vector: np.ndarray) -> np.ndarray:
@@ -166,7 +147,8 @@ class MinimalToeplitzConvolver():
 
         # Coordinates of kernel that correspond to the coordinates in row_matrix and col_vector
         kernel_row_matrix = (self.kernel.shape[0] - 1) - (tb_row_matrix - tb_col_vector[:, None])
-        del tb_col_vector # Free up memory. TODO: profile to see if this is necessary
+         # Free up memory along the way
+        del tb_col_vector
         del tb_row_matrix
         padded_kernel_col_matrix = t_row_matrix - t_col_vector[:, None]
         del t_col_vector
